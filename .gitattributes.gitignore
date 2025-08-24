@@ -1,6 +1,0 @@
-*           text=auto eol=lf
-*.ipynb     text eol=lf
-*.py        text eol=lf
-*.md        text eol=lf
-
-*.bat       text eol=crlf
