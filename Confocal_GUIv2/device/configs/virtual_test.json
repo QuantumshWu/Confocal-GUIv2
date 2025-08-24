@@ -1,0 +1,59 @@
+{
+  "counter": {
+    "type": "VirtualCounter",
+    "params": {
+      "unique_id": null
+    }
+  },
+  "counter2": {
+    "type": "VirtualCounter2",
+    "params": {
+      "unique_id": null
+    }
+  },
+  "laser": {
+    "type": "VirtualLaser",
+    "params": {
+      "piezo_lb": null,
+      "piezo_ub": null,
+      "unique_id": null
+    }
+  },
+  "laser_stabilizer": {
+    "type": "VirtualLaserStabilizer",
+    "params": {
+      "wavemeter_handle": "$device:wavemeter",
+      "laser_handle": "$device:laser",
+      "freq_thre": 0.025,
+      "wavelength_lb": null,
+      "wavelength_ub": null,
+      "unique_id": null
+    }
+  },
+  "pulse": {
+    "type": "VirtualPulse",
+    "params": {
+      "unique_id": null
+    }
+  },
+  "rf": {
+    "type": "VirtualRF",
+    "params": {
+      "frequency_lb": 100000000.0,
+      "frequency_ub": 3500000000.0,
+      "unique_id": null
+    }
+  },
+  "scanner": {
+    "type": "VirtualScanner",
+    "params": {
+      "unique_id": null
+    }
+  },
+  "wavemeter": {
+    "type": "VirtualWavemeter",
+    "params": {
+      "unique_id": null
+    }
+  }
+}

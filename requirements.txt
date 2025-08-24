@@ -1,0 +1,12 @@
+matplotlib
+numpy
+scipy
+pyqt5
+ipympl
+pyvisa
+jupyterlab
+PyQt5-Frameless-Window
+rpyc
+cryptography
+
+# pyvisa-py, nidaqmx, pulsestreamer, spinapi

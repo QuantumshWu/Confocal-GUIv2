@@ -1,0 +1,63 @@
+{
+  "counter": {
+    "type": "USB2120",
+    "params": {
+      "port_config": {
+        "apd_signal": "PFI3",
+        "apd_gate": "PFI4",
+        "apd_gate_ref": "PFI1",
+        "dev_num": "Dev2"
+      },
+      "unique_id": "Dev2"
+    }
+  },
+  "laser": {
+    "type": "DLCpro",
+    "params": {
+      "ip": "128.223.23.108",
+      "piezo_lb": 50,
+      "piezo_ub": 90,
+      "unique_id": "128.223.23.108"
+    }
+  },
+  "laser_stabilizer": {
+    "type": "LaserStabilizerDLCpro",
+    "params": {
+      "wavemeter_handle": "$device:wavemeter",
+      "laser_handle": "$device:laser",
+      "wavelength_lb": 737.1,
+      "wavelength_ub": 737.135,
+      "freq_thre": 0.025,
+      "unique_id": 1
+    }
+  },
+  "pulse": {
+    "type": "PulseSpinCore",
+    "params": {
+      "unique_id": 1
+    }
+  },
+  "rf": {
+    "type": "DSG836",
+    "params": {
+      "visa_address": "GPIB0::17::INSTR",
+      "power_ub": -5,
+      "power_lb": null,
+      "unique_id": "GPIB0::17::INSTR"
+    }
+  },
+  "scanner": {
+    "type": "AFG31152",
+    "params": {
+      "visa_address": "GPIB0::1::INSTR",
+      "unique_id": "GPIB0::1::INSTR"
+    }
+  },
+  "wavemeter": {
+    "type": "WaveMeter871",
+    "params": {
+      "ip": "10.199.199.1",
+      "unique_id": "10.199.199.1"
+    }
+  }
+}

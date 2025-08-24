@@ -1,0 +1,12 @@
+*.log
+*.jpg
+*.pyc
+__pycache__/
+.ipynb_checkpoints/
+/.venv/
+
+jupyter\ notebook\ examples/**
+!jupyter\ notebook\ examples/**/*.ipynb
+!jupyter\ notebook\ examples/**/*.bat
+
+Confocal_GUIv2/device/certificate/**

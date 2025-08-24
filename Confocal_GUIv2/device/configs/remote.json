@@ -1,0 +1,50 @@
+{
+  "laser_stabilizer": {
+    "type": "RemoteDevice",
+    "params": {
+      "unique_id": 52351,
+      "ip": "128.223.23.131",
+      "port": 52351
+    }
+  },
+  "laser": {
+    "type": "RemoteDevice",
+    "params": {
+      "unique_id": 51583,
+      "ip": "128.223.23.131",
+      "port": 51583
+    }
+  },
+  "wavemeter": {
+    "type": "RemoteDevice",
+    "params": {
+      "unique_id": 51347,
+      "ip": "128.223.23.131",
+      "port": 51347
+    }
+  },
+  "counter": {
+    "type": "RemoteDevice",
+    "params": {
+      "unique_id": 51841,
+      "ip": "128.223.23.131",
+      "port": 51841
+    }
+  },
+  "pulse": {
+    "type": "RemoteDevice",
+    "params": {
+      "unique_id": 51849,
+      "ip": "128.223.23.131",
+      "port": 51849
+    }
+  },
+  "scanner": {
+    "type": "RemoteDevice",
+    "params": {
+      "unique_id": 51896,
+      "ip": "128.223.23.131",
+      "port": 51896
+    }
+  }
+}
