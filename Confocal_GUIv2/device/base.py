@@ -974,6 +974,7 @@ class BaseLaserStabilizer(BaseDevice):
 
         self.spl = 299792458
         self.freq_thre = freq_thre # default 0.025=25MHz threshold defines when to return is_ready
+        self.freq_deadzone = 0.015 # if error less than freq_deadzone then no actions
         self.wavelength_lb = wavelength_lb
         self.wavelength_ub = wavelength_ub
 
@@ -1037,7 +1038,8 @@ class BaseLaserStabilizer(BaseDevice):
                     self._ready_event.set()
                 else:
                     self.is_ready = False
-                self._stabilizer_core(freq_diff)
+                if np.abs(freq_diff)>self.freq_deadzone:
+                    self._stabilizer_core(freq_diff)
 
             if self._evt_request.is_set():
                 self._evt_ack.set()          # ready_to_go
@@ -1584,6 +1586,9 @@ class BaseCounterNI(BaseCounter):
         super().__init__()
 
         import nidaqmx
+        from nidaqmx.constants import AcquisitionType
+        from nidaqmx.constants import TerminalConfiguration
+        from nidaqmx.stream_readers import AnalogMultiChannelReader
 
         defaults = {
             'dev_num':         'Dev2',

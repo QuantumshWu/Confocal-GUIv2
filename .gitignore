@@ -5,8 +5,11 @@ __pycache__/
 .ipynb_checkpoints/
 /.venv/
 
+# Jupyter examples: ignore all, but keep only example notebooks and .bat scripts
 jupyter\ notebook\ examples/**
-!jupyter\ notebook\ examples/**/*.ipynb
-!jupyter\ notebook\ examples/**/*.bat
+!jupyter\ notebook\ examples/
+!jupyter\ notebook\ examples/example_optics_lab.ipynb
+!jupyter\ notebook\ examples/example_quick_start.ipynb
+!jupyter\ notebook\ examples/run_jupyterlab.bat
 
 Confocal_GUIv2/device/certificate/**

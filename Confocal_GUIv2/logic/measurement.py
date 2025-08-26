@@ -1010,3 +1010,65 @@ class LiveMeasurement(BaseMeasurement):
         return cls._base_caller(locals())
 
 
+
+@measurement_gui_meta(
+    unit='MHz',
+    name='mode',
+    xlabel='RF Frequency',
+    ylabel='Counts',
+    caller='mode',
+    plotter='Live1D',
+    device_names=['counter', 'pulse', 'rf', 'laser', 'laser_stabilizer'],
+    update_mode_valid=['replace', 'create'],
+)
+class ModeMeasurement(BaseMeasurement):
+    def __init__(self, config:BaseMeasurementConfig, power:float):
+        super().__init__(config=config)
+        self.power = power
+        xlabel = f'{self.xlabel} ({self.unit})'
+        if self.counter_mode=='apd_sample':
+            ylabel = f'{self.ylabel}/{self.sample_num}pts'
+        else:
+            ylabel = f'{self.ylabel}/{self.exposure}s'
+        zlabel = f'{self.zlabel}'
+        self.labels = [xlabel, ylabel, zlabel]
+
+    def to_initial_state(self):
+        pass
+    def device_to_state(self, value):
+        pass
+    def to_final_state(self):
+        pass
+    def get_data_y(self):
+        pass
+
+    def read_x(self):
+        pass
+    def set_x(self, value):
+        pass
+
+
+    @classmethod
+    def caller(cls, 
+        is_GUI=False,
+        # if open gui
+        data_x=None, x_array=np.arange(1000-1, 1000+1+1e-4, 1e-4), exposure=0.05, sample_num=1000, repeat=1,
+        counter_mode='apd', data_mode='single', update_mode='replace',
+        pulse_file=None, parent=None, 
+        # BaseMeasurementConfig
+        counter='counter', pulse='pulse', rf='rf',
+        laser='laser', laser_stabilizer='laser_stabilizer',
+        # device_names
+        power=10, is_adaptive=False,
+        h0_hz=1000, h1_hz=1500,
+        alpha=0.001, beta=0.05,
+        exposure_h1 = 1,
+        # params for sequential probability ratio test (SPRT)
+        # other params for measurement if any
+        update_time=1, fig=None, relim_mode='tight',
+        # live_plot params 
+        auto_save_and_close=True, qt_parent=None):
+        # controller params
+        return cls._base_caller(locals())
+
+
