@@ -960,9 +960,8 @@ class BaseLaserStabilizer(BaseDevice):
     Base class to 
     
     """
-    def __init__(self, unique_id, wavemeter_handle:BaseDevice, laser_handle:BaseDevice, freq_thre=0.025, wavelength_lb=None, 
-        wavelength_ub=None):
-        import threading
+    def __init__(self, unique_id, wavemeter_handle:BaseDevice, laser_handle:BaseDevice, freq_thre=0.015, freq_deadzone=0.005,
+        wavelength_lb=None, wavelength_ub=None):
         self.is_ready = False
         self._wavelength = None # wavelength that user inputs
         self.desired_wavelength = None # used for feedback
@@ -973,7 +972,7 @@ class BaseLaserStabilizer(BaseDevice):
         self.laser = laser_handle
 
         self.spl = 299792458
-        self.freq_thre = freq_thre # default 0.025=25MHz threshold defines when to return is_ready
+        self.freq_thre = freq_thre # default 0.015=15MHz threshold defines when to return is_ready
         self.freq_deadzone = 0.015 # if error less than freq_deadzone then no actions
         self.wavelength_lb = wavelength_lb
         self.wavelength_ub = wavelength_ub
@@ -1088,7 +1087,7 @@ class BasePulse(BaseDevice):
         self.t_resolution = max(t_resolution) 
         # minumum allowed pulse (width, resolution), (12, 2) for spin core, will round all time durations beased on this
         self._valid_str = ['+', '-', 'x', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'e', 'E', ' ']
-
+        self.x = self.t_resolution # postive int in ns, a timing varible used to replace all 'x' in timing array and matrix, effective only in read_data()
         self.delay_array = np.array([0,0,0,0,0,0,0,0])
         self.data_matrix = np.array([[1000, 1,0,0,0,0,0,0,0], [1000, 1,0,0,0,0,0,0,0]])
         # example of data_matrix [[duration in ns, on or off for channel i, ...], ...]
@@ -1101,7 +1100,6 @@ class BasePulse(BaseDevice):
         self.channel_names = ['', '', '', '', '', '', '', '']
         # names of all channels, such as 'RF', 'Green', 'DAQ', 'DAQ_ref'
         self.total_duration = None
-        self.x = self.t_resolution # postive int in ns, a timing varible used to replace all 'x' in timing array and matrix, effective only in read_data()
         self.on = False
         self.last_on_state = None
 
@@ -1127,9 +1125,9 @@ class BasePulse(BaseDevice):
 
     gui.__doc__ = PulseGUI.__doc__
 
-    def round_up(self, t, allow_zero=False):
+    def round_up(self, t, allow_any=False):
         # round up t into multiple of self.t_resolution
-        return align_to_resolution(value=t, resolution=self.t_resolution, allow_zero=allow_zero)
+        return align_to_resolution(value=t, resolution=self.t_resolution, allow_any=allow_any)
 
     def set_x_bound(self):
         """
@@ -1185,6 +1183,9 @@ class BasePulse(BaseDevice):
         if (min_x is not None) or (max_x is not None):
             print(f"Set x_lb, x_ub to {self.x_lb}ns, {self.x_ub}ns due to every period in data_matrix must be >= {self.t_resolution}ns")
 
+        self.x = self.x
+        # update x in case bound changes
+
 
     @property
     def delay_array(self):
@@ -1201,7 +1202,7 @@ class BasePulse(BaseDevice):
         if not all(isinstance(item, Number) or all(elem in self._valid_str for elem in item) for item in value):
             print(f"Invalid input. Can only be one of {self._valid_str}.")
             return
-        self._delay_array = [self.round_up(delay, allow_zero=True) for delay in value]
+        self._delay_array = [self.round_up(delay, allow_any=True) for delay in value]
 
     @property
     def data_matrix(self):
@@ -1227,7 +1228,8 @@ class BasePulse(BaseDevice):
                     print(f"Invalid input. Can only be one of {self._valid_str}.") 
                     return
 
-        self._data_matrix = [[self.round_up(item, allow_zero=False) if i==0 else int(item) for i, item in enumerate(period)] for period in value]
+        self._data_matrix = [[self.round_up(item, allow_any=False) if i==0 else int(item) 
+            for i, item in enumerate(period)] for period in value]
         self.set_x_bound()
 
     @property
@@ -1293,7 +1295,7 @@ class BasePulse(BaseDevice):
     
     @x.setter
     def x(self, value):
-        self._x = self.round_up(value, allow_zero=True)
+        self._x = self.round_up(value, allow_any=True)
         # bound is also at resolution grid so will not round out of bounds
 
     @property

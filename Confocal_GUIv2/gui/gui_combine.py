@@ -250,9 +250,9 @@ class LivePlotMainGUI(QWidget):
             self.combo_device.setCurrentText('pulse')
 
     def add_tab(self, tab_widget, combo_widget, meas_cls=None, ov=None, origin='user'):
-        SOFT_MAX_LEFT = 2   # user clicks
-        HARD_MAX_LEFT = 3   # tasks may exceed soft limit but not this
-        HARD_MAX_RIGHT = 3
+        SOFT_MAX_LEFT = 3   # user clicks
+        HARD_MAX_LEFT = 4   # tasks may exceed soft limit but not this
+        HARD_MAX_RIGHT = 4
 
         if tab_widget is self.tabs_left:
             limit = SOFT_MAX_LEFT if origin == 'user' else HARD_MAX_LEFT

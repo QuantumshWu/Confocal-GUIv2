@@ -962,18 +962,17 @@ class DeviceGUI(QWidget):
         layout.setSpacing(6)
 
         # Bounds
-        if lb is not None or ub is not None:
-            lb_s = float2str_eng(lb, length=self.MAX_LEN) if lb is not None else '-∞'
-            ub_s = float2str_eng(ub, length=self.MAX_LEN) if ub is not None else '∞'
-            box = QHBoxLayout()
-            label_range = QLabel('Range:')
-            label_range.setFixedSize(100, 30)
-            box.addWidget(label_range, alignment=Qt.AlignLeft)
-            rng = QLineEdit(f"{lb_s} to {ub_s}")
-            rng.setEnabled(False)
-            rng.setFixedSize(300, 30)
-            box.addWidget(rng)
-            layout.addLayout(box)
+        lb_s = float2str_eng(lb, length=self.MAX_LEN) if lb is not None else '-∞'
+        ub_s = float2str_eng(ub, length=self.MAX_LEN) if ub is not None else '∞'
+        box = QHBoxLayout()
+        label_range = QLabel('Range:')
+        label_range.setFixedSize(100, 30)
+        box.addWidget(label_range, alignment=Qt.AlignLeft)
+        rng = QLineEdit(f"{lb_s} to {ub_s}")
+        rng.setEnabled(False)
+        rng.setFixedSize(300, 30)
+        box.addWidget(rng)
+        layout.addLayout(box)
 
         # Current
         box = QHBoxLayout()
@@ -1460,8 +1459,9 @@ class PulseGUI(QWidget):
 
 
     def on_pulse(self):
-        self.save_data()
-        self.device_handle.on_pulse()
+        ok = self.save_data()
+        if ok:
+            self.device_handle.on_pulse()
 
     def auto_fixed_size(self, widget, direction='wh'):
         widget.adjustSize()
@@ -1504,9 +1504,10 @@ class PulseGUI(QWidget):
         if text in ('str (ns)', 'ns'):
             line_edit.set_resolution(self.t_resolution)
         if text in ('us',):
-            line_edit.set_resolution(self.t_resolution/1e3)
+            line_edit.set_resolution(self.t_resolution/100)
         if text in ('ms',):
-            line_edit.set_resolution(self.t_resolution/1e6)
+            line_edit.set_resolution(self.t_resolution/100)
+        # /100 not /1e3 or /1e6 for a better display
 
     def handle_text_change(self, text, combo_box):
         """
@@ -1766,8 +1767,8 @@ class PulseGUI(QWidget):
 
     def save_data(self):
         if not self.current_state_valid():
-            QMessageBox.warning(self, "Invalid input: invalid or incomplete expression.")
-            return
+            QMessageBox.warning(self, 'Invalid input', 'invalid or incomplete expression.')
+            return False
 
         # --- All good → commit to device_handle ---        
         self.device_handle.data_matrix = self.read_data()
@@ -1775,6 +1776,8 @@ class PulseGUI(QWidget):
         self.device_handle.channel_names = self.read_channel_names()
         self.device_handle.repeat_info = self.read_repeat_info()
         self.device_handle.ref_info = self.read_ref_info()
+
+        return True
 
                     
     def read_data(self):
@@ -1893,7 +1896,7 @@ class PulseGUI(QWidget):
         pulse_list = [item for item in self.drag_container.items if item.item_type=='pulse']
         count = len(pulse_list)
 
-        row = QGroupBox('Pulse%d'%(count))
+        row = QGroupBox(f'Period{count}')
 
         row.setMinimumWidth(100)
 
@@ -1908,7 +1911,7 @@ class PulseGUI(QWidget):
         sublayout.addWidget(btn)
         btn = FloatOrXLineEdit('10')
         btn.set_resolution(self.t_resolution)
-        btn.set_allow_zero(False)
+        btn.set_allow_any(False)
         btn.setFixedSize(80,30)
         sublayout.addWidget(btn)
         btn2 = QComboBox()
@@ -1937,9 +1940,15 @@ class PulseGUI(QWidget):
         value = float2str(self.device_handle.x, length=self.MAX_LEN)
         self.edit_display_x.setText(value)
 
+        lb = getattr(self.device_handle, 'x_lb', None)
+        ub = getattr(self.device_handle, 'x_ub', None)
+        lb_s = float2str_eng(lb, length=8) if lb is not None else '-∞'
+        ub_s = float2str_eng(ub, length=8) if ub is not None else '∞'
+        self.edit_bound_x.setText(f"{lb_s} to {ub_s}")
+
     def add_delay(self):
         count = self.layout_dataset.count()
-        row = QGroupBox('Delay')
+        row = QGroupBox('Delay and X')
         self.layout_dataset.addWidget(row)
         layout_data = QVBoxLayout(row)
         layout_data.setContentsMargins(8, 8, 8, 8)
@@ -1948,26 +1957,29 @@ class PulseGUI(QWidget):
         sublayout = QHBoxLayout()
         layout_data.addLayout(sublayout)
 
-        btn = QLabel(f'Set x (ns):')
-        btn.setMinimumWidth(70)
-        btn.setFixedHeight(30)
-        sublayout.addWidget(btn)
+        self.btn_set_x = QPushButton(f'Set x (ns):')
+        self.btn_set_x.setMinimumWidth(70)
+        self.btn_set_x.setFixedHeight(30)
+        sublayout.addWidget(self.btn_set_x)
+        self.btn_set_x.clicked.connect(self.on_set_x)
         self.edit_set_x = FloatLineEdit()
         self.edit_set_x.setFixedSize(168,30)
         self.edit_set_x.set_resolution(self.t_resolution)
-        self.edit_set_x.set_allow_zero(True)
+        self.edit_set_x.set_allow_any(True)
         sublayout.addWidget(self.edit_set_x)
         self.edit_set_x.setMaxLength(self.MAX_LEN)
 
         sublayout = QHBoxLayout()
         layout_data.addLayout(sublayout)
-        sublayout.addStretch()
-        self.btn_set_x = QPushButton('Apply')
-        self.btn_set_x.setFixedSize(168,30)
-        value = float2str(self.device_handle.x, length=self.MAX_LEN)
-        self.edit_set_x.setText(value)
-        sublayout.addWidget(self.btn_set_x)
-        self.btn_set_x.clicked.connect(self.on_set_x)
+        label_range = QLabel('Range:')
+        label_range.setMinimumWidth(70)
+        label_range.setFixedHeight(30)
+        sublayout.addWidget(label_range)
+        self.edit_bound_x = QLineEdit()
+        self.edit_bound_x.setFixedSize(168,30)
+        self.edit_bound_x.setEnabled(False)
+        sublayout.addWidget(self.edit_bound_x)
+
 
         sublayout = QHBoxLayout()
         layout_data.addLayout(sublayout)
@@ -1994,7 +2006,7 @@ class PulseGUI(QWidget):
             sublayout.addWidget(btn)
             btn = FloatOrXLineEdit('0')
             btn.set_resolution(self.t_resolution)
-            btn.set_allow_zero(True)
+            btn.set_allow_any(True)
             btn.setFixedSize(80,30)
             sublayout.addWidget(btn)
             btn2 = QComboBox()
@@ -2012,12 +2024,10 @@ class PulseGUI(QWidget):
         self.x_timer.timeout.connect(self.update_x)
         self.x_timer.start()
 
-        self._update_total_duration_label()
-
 
     def add_channel_names(self):
         count = self.layout_dataset.count()
-        row = QGroupBox('Channel Names')
+        row = QGroupBox('Channel Names and Duration')
         self.layout_dataset.addWidget(row)
         layout_data = QVBoxLayout(row)
         layout_data.setContentsMargins(8, 8, 8, 8)
@@ -2052,6 +2062,8 @@ class PulseGUI(QWidget):
             sublayout.addWidget(btn)
 
         self.auto_fixed_size(row)
+
+        self._update_total_duration_label()
 
 
     def save_to_file(self):
@@ -2313,7 +2325,7 @@ class DragContainer(QWidget):
         pulse_list = [item for item in self.items if item.item_type=='pulse']
         for ii, item in enumerate(pulse_list):
             widget = item.widget
-            widget.setTitle(f'Pulse{ii}')
+            widget.setTitle(f'Period{ii}')
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasFormat("application/x-drag-bracket"):

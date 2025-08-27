@@ -277,58 +277,81 @@ class CenteredTabBar(QTabBar):
         # Ensure the widget‐level font matches your stylesheet
         self.setFont(QFont(FONT_FAMILY, FONT_SIZE))
 
+
     def paintEvent(self, event):
         painter = QStylePainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
 
-        ICON_TEXT_GAP = 4  # px between icon and text
+        ICON_TEXT_GAP = 4   # px between icon and text
+        LEFT_PAD      = 4   # left padding inside each tab
+        RIGHT_GAP     = 8   # small gap before/after the close button
 
         for idx in range(self.count()):
             # 1) Build the style option for this tab
             option = QStyleOptionTab()
             self.initStyleOption(option, idx)
 
-            # 2) Draw the tab background and border via stylesheet rules
+            # 2) Draw the tab background/shape per stylesheet
             painter.drawControl(self.style().CE_TabBarTabShape, option)
 
-            # 3) Compute how much width the close-button takes
-            btn_w = self.style().pixelMetric(
-                QStyle.PM_TabCloseIndicatorWidth, option, self
-            )
-            # 4) Derive the 'available' rect by subtracting close button area
-            avail = QRect(option.rect)
-            # move the right edge left by btn_w (plus a tiny margin if desired)
-            avail.setRight(avail.right() - btn_w - 2)
+            # 3) Compute the label rect by excluding any close-button area
+            label_rect = QRect(option.rect)
 
-            # 5) Choose pen color: white on hover-unselected, else ButtonText role
+            # -- Prefer the real button widget width (Qt5-safe) --
+            btn_right = self.tabButton(idx, QTabBar.RightSide)
+            if btn_right and btn_right.isVisible():
+                label_rect.setRight(label_rect.right() - (btn_right.width() + RIGHT_GAP))
+            else:
+                # Fallback: if the tab bar is closable, subtract style metric on the right
+                if self.tabsClosable():
+                    w = self.style().pixelMetric(QStyle.PM_TabCloseIndicatorWidth, option, self)
+                    label_rect.setRight(label_rect.right() - (w + RIGHT_GAP))
+
+            # (Rare) if a style places close button on the left, exclude it as well.
+            btn_left = self.tabButton(idx, QTabBar.LeftSide)
+            if btn_left and btn_left.isVisible():
+                label_rect.setLeft(label_rect.left() + (btn_left.width() + RIGHT_GAP))
+
+            # 4) Choose pen color: white on hover-unselected, else ButtonText role
             if (option.state & QStyle.State_MouseOver) and not (option.state & QStyle.State_Selected):
                 painter.setPen(QColor('white'))
             else:
                 painter.setPen(option.palette.color(option.palette.ButtonText))
 
-            # 6) Use the widget’s font (ensures it’s Segoe UI 12pt)
+            # 5) Use the widget’s font
             painter.setFont(self.font())
+            fm = painter.fontMetrics()
 
-            # 7) Grab icon + text
+            # 6) Icon + text
             icon = self.tabIcon(idx).pixmap(self.iconSize())
             text = self.tabText(idx)
 
-            # 8) Measure widths to center the block
-            fm     = painter.fontMetrics()
-            text_w = fm.horizontalAdvance(text)
-            icon_w = icon.width() if not icon.isNull() else 0
-            gap    = ICON_TEXT_GAP if icon_w else 0
-            total  = icon_w + gap + text_w
+            # 7) Left-align inside label_rect; vertical center
+            x = label_rect.left() + LEFT_PAD
+            y_text_baseline = label_rect.y() + (label_rect.height() - fm.height()) // 2 + fm.ascent()
 
-            # 9) Compute the x/y so “icon+gap+text” is centered in avail
-            x0     = avail.x() + (avail.width() - total)//2
-            y_text = avail.y() + (avail.height() - fm.height())//2 + fm.ascent()
-            y_icon = avail.y() + (avail.height() - icon.height())//2
+            # 8) Clip so nothing can paint under the close button
+            painter.save()
+            painter.setClipRect(label_rect)
 
-            # 10) Draw icon then text
-            if icon_w:
-                painter.drawPixmap(x0, y_icon, icon)
-            painter.drawText(x0 + icon_w + gap, y_text, text)
+            # 9) Draw icon (if any), then compute remaining area for text
+            if not icon.isNull():
+                y_icon = label_rect.y() + (label_rect.height() - icon.height()) // 2
+                painter.drawPixmap(x, y_icon, icon)
+                x += icon.width() + ICON_TEXT_GAP
+
+            # Remaining width for text inside the clipped area (avoid off-by-one)
+            text_width_avail = max(0, label_rect.width() - (x - label_rect.left()))
+
+            # 10) Elide text on the right to avoid overlapping the close button
+            elided = fm.elidedText(text, Qt.ElideRight, text_width_avail)
+
+            # 11) Draw text (left-aligned, vertically centered)
+            painter.drawText(QRect(x, label_rect.y(), text_width_avail, label_rect.height()),
+                             Qt.AlignVCenter | Qt.AlignLeft, elided)
+
+            painter.restore()
+
 
 class FluentTabWidget(QTabWidget):
     """
@@ -386,7 +409,7 @@ class FluentTabWidget(QTabWidget):
             /* Tab styling: background, text color, padding, rounded top corners */
             QTabBar::tab {{
                 margin: 0px;
-                width: 120px;
+                width: 110px;
                 height: 30px;
                 background: {BG_COLOR};
                 color: {TEXT_COLOR};
@@ -605,8 +628,8 @@ class FluentLineEdit(QLineEdit):
         """
         self._res_step = float(step) if step else None
 
-    def set_allow_zero(self, allow_zero: bool = False):
-        self.allow_zero = allow_zero
+    def set_allow_any(self, allow_any: bool = False):
+        self.allow_any = allow_any
 
     def _snap_to_resolution(self):
         """
@@ -622,7 +645,7 @@ class FluentLineEdit(QLineEdit):
           - No blockers; setText will emit textChanged by design.
         """
         step = getattr(self, "_res_step", None)
-        allow_zero = getattr(self, "allow_zero", False)
+        allow_any = getattr(self, "allow_any", False)
         if not step:
             return
 
@@ -630,7 +653,7 @@ class FluentLineEdit(QLineEdit):
         if not s:
             return
 
-        new_s = align_to_resolution(value=s, resolution=step, allow_zero=allow_zero)
+        new_s = align_to_resolution(value=s, resolution=step, allow_any=allow_any)
         if new_s != s:
             self.setText(new_s)
 
@@ -1526,6 +1549,7 @@ class DynamicPlainTextEdit(FluentPlainTextEdit):
         super().resizeEvent(e)
         self._adjust_height()
 
+
     def _adjust_height(self):
         """Keep your original height formula but count *visual* lines (includes soft wraps)."""
         # --- compute visual line count ---
@@ -1553,6 +1577,6 @@ class DynamicPlainTextEdit(FluentPlainTextEdit):
         frame = self.frameWidth() * 2
         margin = self._doc_margin * 2
 
-        total = int(line_count * line_height + frame + margin)
+        total = np.ceil(line_count * line_height + frame + margin) + 1
         self.setFixedHeight(total)
         self.updateGeometry()

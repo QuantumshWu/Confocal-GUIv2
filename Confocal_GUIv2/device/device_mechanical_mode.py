@@ -69,9 +69,9 @@ class LaserStabilizerDLCpro(BaseLaserStabilizer):
     """
     
     def __init__(self, unique_id, wavemeter_handle:BaseDevice, laser_handle:BaseDevice, 
-        wavelength_lb=None, wavelength_ub=None, freq_thre=0.025):
+        wavelength_lb=None, wavelength_ub=None, freq_thre=0.015, freq_deadzone=0.005):
         super().__init__(unique_id=unique_id, wavemeter_handle=wavemeter_handle, laser_handle=laser_handle,
-            wavelength_lb=wavelength_lb, wavelength_ub=wavelength_ub, freq_thre=freq_thre)
+            wavelength_lb=wavelength_lb, wavelength_ub=wavelength_ub, freq_thre=freq_thre, freq_deadzone=freq_deadzone)
         self.ratio = 0.56 # +1V piezo -> +0.56GHz freq
         self.v_mid = 0.5*(self.laser.piezo_ub + self.laser.piezo_lb)
         self.v_min = self.laser.piezo_lb + 0.01*(self.laser.piezo_ub - self.laser.piezo_lb)
@@ -355,3 +355,108 @@ class USB2120(BaseCounterNI):
         super().__init__(port_config=port_config)
         self.counter_mode_valid = ['apd', 'analog', 'apd_sample']
         self.data_mode_valid = ['single', 'ref_div', 'ref_sub', 'dual']
+
+
+class Camera(BaseCounter):
+    def __init__(self, unique_id):
+        from IPython.display import display
+        import PIL.Image
+        import cv2
+        self.cv2 = cv2
+        self.display = display
+        self.PILImage = PIL.Image
+        self.cap = self.cv2.VideoCapture(0, self.cv2.CAP_DSHOW)
+        self.x_l = 0
+        self.x_u = -1
+        self.y_l = 0
+        self.y_u = -1
+        self.overhead = 0.04 # 25FPS
+
+        self.exposure = None
+        self.counter_mode_valid = ['apd']
+        self.data_mode_valid = ['single']
+        self.data_mode = 'single'
+        self.counter_mode = 'apd'
+
+    def close(self):
+        self.cap.release()
+        self.cv2.destroyAllWindows()
+
+    def read_frame(self):
+        ret, frame = self.cap.read()
+        gray = self.cv2.cvtColor(frame, self.cv2.COLOR_BGR2GRAY)
+        frame3 = self.cv2.merge([gray, gray, gray])
+        return frame3.astype(np.float32)
+
+    def monitor(self):
+        # display image until keyboard interrupt
+        try:
+            handle = None
+            while True:
+                self.frame_ = self.image_sum(counts=5)
+                image = self.PILImage.fromarray(self.frame_)
+                if handle is None:
+                    self.handle = self.display(image, display_id = True)
+                else:
+                    self.handle.update(image)
+        except KeyboardInterrupt:
+            return
+        except Exception as e:
+            log_error(e)
+            return
+
+    def image_sum(self, counts=5):
+        frame_ = None
+        for _ in range(counts):
+            frame_large = self.read_frame()
+            if frame_ is None:
+                frame_ = frame_large
+            else:
+                frame_ += frame_large
+                
+        self.frame_ = (frame_/counts).astype(np.uint8)[self.x_l:self.x_u,self.y_l:self.y_u,:]
+        return np.sum(self.frame_)
+
+    @property
+    def counter_mode_valid(self):
+        return self._counter_mode_valid
+
+    @counter_mode_valid.setter
+    def counter_mode_valid(self, value):
+        self._counter_mode_valid = value
+
+    @property
+    def data_mode_valid(self):
+        return self._data_mode_valid
+
+    @data_mode_valid.setter
+    def data_mode_valid(self, value):
+        self._data_mode_valid = value
+
+    @BaseDevice.ManagedProperty('str')
+    def data_mode(self):
+        return self._data_mode
+
+    @BaseDevice.ManagedProperty('str')
+    def counter_mode(self):
+        return self._counter_mode
+
+    @data_mode.setter
+    def data_mode(self, value):
+        self._data_mode = value
+
+    @counter_mode.setter
+    def counter_mode(self, value):
+        self._counter_mode = value
+
+    @BaseDevice.ManagedProperty('func', thread_safe=True)
+    def read_counts(self, exposure=0.1, sample_num=1000, parent=None):
+        _ = int(self.image_sum(counts=1))
+        # skip the incomplete first frame
+        self.exposure = exposure
+        counts = int(self.image_sum(counts=int(np.ceil(self.exposure/self.overhead))))
+        return [counts,]
+
+    @property
+    def data_len(self):
+        return 1

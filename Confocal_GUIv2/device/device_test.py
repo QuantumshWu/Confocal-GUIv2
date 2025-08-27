@@ -206,7 +206,7 @@ class VirtualPulse(BasePulse):
     """
 
     def __init__(self, unique_id):
-        super().__init__(t_resolution=(2,2))
+        super().__init__(t_resolution=(12,2))
 
 
     def off_pulse_core(self):

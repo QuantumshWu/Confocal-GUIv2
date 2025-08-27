@@ -440,131 +440,133 @@ def log_error(e):
     else:
         print("(No active exception to trace)")
 
-def align_to_resolution(value=None, resolution=None, allow_zero: bool = False):
+def align_to_resolution(value=None, resolution=None, allow_any: bool = True):
     """
-    Snap a number or a 'float_or_x' string to a resolution grid.
+    Round to the nearest multiple of `resolution` (ties half away from zero).
 
-    Parameters
-    ----------
-    value : int|float|str|None
-        A plain number, or a string in the accepted float_or_x forms
-        (e.g., "123", "101-x", "x-3.5e2", "+x", etc.).
-    resolution : int|float|None
-        Grid step (ns in your use case). If None or 0, the value is returned unchanged.
-    allow_zero : bool
-        If True, do NOT modify zeros:
-          - numeric 0 stays 0
-          - string tokens that parse to 0 stay as-is
-        If False (default), avoid producing 0 by snapping 0 to +resolution.
-
-    Rules (when allow_zero is False)
-    --------------------------------
-    - value == 0              -> +resolution  (avoid zero)
-    - value  > 0              -> ceil(x/res)*res
-    - value  < 0              -> floor(x/res)*res
-    - For strings, only the single numeric token is replaced; the rest (including 'x') is preserved.
-    - Unparseable strings are returned unchanged.
-    - Pure '±x' (no numeric token) is returned unchanged.
-
-    Notes
+    Rules
     -----
-    - Formatting tries to keep a compact numeric representation (scientific form when reasonable).
+    - If `value` is numeric or a pure-number string:
+        * Respect `allow_any`: when False, the final snapped result must be > 0.
+    - If `value` is a string containing 'x':
+        * ALWAYS behave as allow_any=True (negatives/zero allowed).
+        * If the snapped numeric token becomes 0, remove the adjacent '+/- 0' term
+          (e.g., 'x-1' -> 'x' when resolution=12).
+
+    - Only the single numeric token is modified for strings; others (including 'x') are preserved.
+    - Unparseable strings (w.r.t. FLOAT_OR_X_PARSING_PATTERN) are returned unchanged.
     """
+    EPS = 1e-12
+
     if resolution in (None, 0):
         return value
+    res = float(abs(resolution))
 
-    resolution = np.abs(resolution)
+    # ---------- helpers ----------
+    def is_zero(y: float) -> bool:
+        return np.isclose(y, 0.0, rtol=0.0, atol=EPS)
 
-    # Early return only for None/empty string (NOT numeric zero)
-    if value in (None, ''):
-        return value
+    def round_half_away(q: float) -> float:
+        """Nearest-integer rounding with ties away from zero."""
+        return np.floor(q + 0.5) if q >= 0 else np.ceil(q - 0.5)
 
-    # -------- Numeric input --------
+    def snap(x: float, enforce_positive: bool) -> float:
+        """Snap x to nearest grid, optionally enforcing strictly positive result."""
+        y = float(round_half_away(x / res) * res)
+        if enforce_positive and (y <= 0 or is_zero(y)):
+            y = res
+        # collapse -0.0
+        if is_zero(y):
+            y = 0.0
+        return y
+
+    def decimals_for(step: float) -> int:
+        """Small k so that step*10^k is (almost) integer; cap at 12."""
+        k = 0
+        while k < 12 and not np.isclose(step*(10**k), round(step*(10**k)), rtol=0.0, atol=EPS):
+            k += 1
+        return k
+
+    def fmt(y: float) -> str:
+        """Compact formatting aligned to resolution granularity."""
+        if is_zero(y):
+            return "0"
+        k = decimals_for(res)
+        s = f"{y:.{k}f}"
+        if '.' in s:
+            s = s.rstrip('0').rstrip('.')
+        return s
+
+    def simplify_zero_term(s: str, a: int, b: int, branch: str) -> str:
+        """
+        Drop the '+/- 0' around the numeric token.
+        - num_right:  (k)x  ±  0  -> remove operator and trailing zero
+        - num_left:   0  ±  (k)x  -> remove leading zero and operator
+        - pure_num:   -> "0"
+        """
+        if branch == 'num_right':
+            prefix = s[:a]
+            m = re.search(r'\s*[+\-]\s*$', prefix)
+            if m:
+                return (prefix[:m.start()] + s[b:]).strip()
+        if branch == 'num_left':
+            suffix = s[b:]
+            m = re.match(r'^\s*[+\-]\s*', suffix)
+            if m:
+                return (s[:a] + suffix[m.end():]).strip()
+        return "0"
+
+    # ---------- numeric input ----------
     if not isinstance(value, str):
-        x = float(value)
-        if x == 0.0:
-            # Keep 0 only if explicitly allowed; otherwise snap to +resolution
-            return 0 if allow_zero else int(resolution)
-        elif x > 0.0:
-            snapped = np.ceil(x / resolution) * resolution
-        else:  # x < 0
-            snapped = np.floor(x / resolution) * resolution
-        return int(snapped)
+        y = snap(float(value), enforce_positive=not allow_any)
+        yi = round(y)
+        return int(yi) if np.isclose(y, yi, rtol=0.0, atol=EPS) else y
 
-    # -------- String input --------
+    # ---------- string input ----------
     s = value
     m = FLOAT_OR_X_PARSING_PATTERN.fullmatch(s)
     if not m:
-        # Not in the accepted forms; leave it as-is
-        return s
+        return s  # Not an accepted form
 
-    # Locate the single numeric token (there is at most one)
+    # locate the single numeric token and the matching branch
     if m.group('pure_num') is not None:
-        a, b = m.span('pure_num')
+        a, b = m.span('pure_num'); branch = 'pure_num'
     elif m.group('num_left') is not None:
-        a, b = m.span('num_left')
+        a, b = m.span('num_left'); branch = 'num_left'
     elif m.group('num_right') is not None:
-        a, b = m.span('num_right')
+        a, b = m.span('num_right'); branch = 'num_right'
     else:
-        # Only ±x; no numeric token to align here
-        return s
+        return s  # pure ±(k)x -> nothing to align
 
     tok = s[a:b]
     try:
         x = float(tok)
     except Exception:
-        # Token not parseable as float; leave unchanged
         return s
 
-    # Zero handling: keep or avoid based on allow_zero
-    if x == 0.0:
-        return s if allow_zero else (s[:a] + str(int(resolution)) + s[b:])
+    # Decide positivity enforcement:
+    # - For strings with 'x' (num_left/num_right): ALWAYS behave like allow_any=True.
+    # - For pure numeric strings: follow allow_any.
+    enforce_positive = (branch == 'pure_num') and (not allow_any)
 
-    # If already exactly on grid, preserve the original token
-    r = x / resolution
-    if np.isclose(r, np.round(r), rtol=0.0, atol=1e-12):
+    # already on grid?
+    on_grid = np.isclose(x / res, round(x / res), rtol=0.0, atol=EPS)
+
+    if on_grid:
+        if branch != 'pure_num':
+            # x-containing: drop ±0, otherwise keep as-is
+            return simplify_zero_term(s, a, b, branch) if is_zero(x) else s
+        # pure numeric
+        if enforce_positive and x <= 0:
+            return fmt(res)
         return s
 
-    # Snap away from zero
-    if x > 0.0:
-        snapped = float(np.ceil(r) * resolution)
-    else:  # x < 0.0
-        snapped = float(np.floor(r) * resolution)
+    # snap and maybe simplify ±0 for x-containing strings
+    y = snap(x, enforce_positive=enforce_positive)
+    if (branch != 'pure_num') and is_zero(y):
+        return simplify_zero_term(s, a, b, branch)
 
-    # --- Formatting: keep your original compact numeric formatting ---
-    # Choose a small decimal precision k so step * 10^k is (almost) integer (cap 12)
-    k = 0
-    while k < 12:
-        if np.isclose(resolution * (10 ** k), np.round(resolution * (10 ** k)), rtol=0.0, atol=1e-12):
-            break
-        k += 1
-
-    sign = '-' if snapped < 0 else ''
-    s_fix = f"{abs(snapped):.{k}f}"  # stabilize digits with fixed k decimals
-    if '.' in s_fix:
-        ip, fp = s_fix.split('.', 1)
-    else:
-        ip, fp = s_fix, ''
-    fp = fp.rstrip('0')
-
-    if fp:
-        # Try AeB where A,B are integers, B != 0
-        A_str = (ip + fp).lstrip('0') or '0'
-        B = -len(fp)
-        if A_str != '0' and B != 0:
-            new_tok = f"{sign}{A_str}e{B}"
-        else:
-            # Fallback: plain decimal, trimmed
-            new_tok = f"{snapped:.{k}f}"
-            if '.' in new_tok:
-                new_tok = new_tok.rstrip('0').rstrip('.')
-    else:
-        new_tok = f"{snapped:.{k}f}"
-        if '.' in new_tok:
-            new_tok = new_tok.rstrip('0').rstrip('.')
-
-    # Replace only the numeric substring
-    return s[:a] + new_tok + s[b:]
+    return s[:a] + fmt(y) + s[b:]
 
 def data_x_str_validator(data_x, n_dim):
     """
@@ -705,17 +707,17 @@ FLOAT_OR_X_PARSING_PATTERN = re.compile(
     r")\s*$"
 )
 
-
-# UI validator (loose): accept pure number, number±(k)x, ±(k)x±number
+# UI validator (loose): accept pure number (now with optional leading sign), number±(k)x, ±(k)x±number
 FLOAT_OR_X_PATTERN = re.compile(
     r"^\s*(?:"
-    # number [± (k)x]
-    r"(?:(?:\d*\.\d+|\d+\.?)(?:[eE][+-]?\d+)?)(?:\s*[+\-]\s*(?:\d+\s*)?x)?"
+    # [±]number [± (k)x]   <-- add optional leading sign here to accept pure negatives
+    r"[+\-]?(?:(?:\d*\.\d+|\d+\.?)(?:[eE][+\-]?\d+)?)(?:\s*[+\-]\s*(?:\d+\s*)?x)?"
     r"|"
-    # ±(k)x [± number]
-    r"[+\-]?(?:\d+\s*)?x(?:\s*[+\-]\s*(?:(?:\d*\.\d+|\d+\.?)(?:[eE][+-]?\d+)?))?"
+    # ±(k)x [± number]     (keep as-is so we don't accept things like 'x--3' unless you want to)
+    r"[+\-]?(?:\d+\s*)?x(?:\s*[+\-]\s*(?:(?:\d*\.\d+|\d+\.?)(?:[eE][+\-]?\d+)?))?"
     r")\s*$",
     re.VERBOSE
 )
+
 
 
