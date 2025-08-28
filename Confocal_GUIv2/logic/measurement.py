@@ -8,7 +8,7 @@ from matplotlib.path import Path
 
 
 from Confocal_GUIv2.helper import fuzzy_search, log_error
-from Confocal_GUIv2.device import get_devices
+from Confocal_GUIv2.device import get_devices, DeviceCanceled
 from Confocal_GUIv2.live_plot import *
 from Confocal_GUIv2.gui import run_fluent_window, LoadGUI, get_figs_dir, LivePlotMainGUI
 
@@ -329,13 +329,14 @@ class BaseMeasurement(ABC, metaclass=MeasurementMeta):
             for self.repeat_cur in range(1, self.repeat+1):
                 for idx, value in enumerate(self.data_x):
                     self.device_to_state(value)
-                    update_data_y_success = self.update_data_y(idx)
-                    if update_data_y_success is False: # means stopped/canceled
-                        self._done_event.set()
-                        self.to_final_state()
-                        return
+                    self.update_data_y(idx)
             self._done_event.set()
             self.to_final_state()
+        except DeviceCanceled:
+            print("[Measurement] Measurement canceled by user.")
+            self._done_event.set()
+            self.to_final_state()
+            return
         except Exception as e:
             log_error(e)
             self._done_event.set()
@@ -1039,8 +1040,6 @@ class ModeMeasurement(BaseMeasurement):
             ylabel = f'{self.ylabel}/{self.exposure}s{" adaptive" if self.is_adaptive else ""}'
         zlabel = f'{self.zlabel}'
         self.labels = [xlabel, ylabel, zlabel]
-        if self.is_adaptive is True:
-            self._cali_h0()
 
     def _cali_h0(self):
         self.to_initial_state()
@@ -1076,10 +1075,11 @@ class ModeMeasurement(BaseMeasurement):
         self.rf.on = False
         self.laser_stabilizer.on = False
     def get_data_y(self):
-
+        if (self.is_adaptive is True) and (self.h0_single_read is None):
+            self._cali_h0()
+            self.to_initial_state()
+            self.device_to_state(value=self.data_x[0])
         counts = self.counter.read_counts(exposure=self.exposure, sample_num=self.sample_num, parent=self)[0]
-        if counts is False:
-            return False
         t0 = time.time()
         n_read = 1
 
@@ -1087,10 +1087,7 @@ class ModeMeasurement(BaseMeasurement):
             if counts < self._counts_threshold(n_read):
                 # if meet h0 then return otherwise continue
                 break
-            counts_add = self.counter.read_counts(exposure=self.exposure, sample_num=self.sample_num, parent=self)[0]
-            if counts_add is False:
-                return False
-            counts += counts_add
+            counts += self.counter.read_counts(exposure=self.exposure, sample_num=self.sample_num, parent=self)[0]
             n_read += 1
 
         return [counts/n_read,]

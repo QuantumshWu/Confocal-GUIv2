@@ -27,6 +27,10 @@ if app is None:
     app_in_device = QApplication(sys.argv)
 # make sure has QApplication before using time_sleep
 
+class DeviceCanceled(Exception):
+    """Internal-only cancellation used to notify device is canceled."""
+    pass
+
 
 _dm = None # global instances for DeviceManager
 DeviceManager_gui_window = None
@@ -821,7 +825,7 @@ class BaseDevice(ABC, metaclass=SingletonAndCloseMeta):
         while s_left > 0:
             if self.is_cancel:
                 self._cancel_log("time_sleep", remaining=f"{s_left:.3f}s")
-                return False
+                raise DeviceCanceled()
             sleep_time = int(np.ceil(min(s_left, self.chunk_s) * 1000))
             loop = QEventLoop()
             QTimer.singleShot(sleep_time, loop.quit)
@@ -1865,7 +1869,7 @@ class BaseCounterNI(BaseCounter):
                     log_error(e)
                     return None
                 if self.is_cancel:
-                    return None
+                    raise DeviceCanceled()
 
                 if (data_main_0 is None) and (data_ref_0 is None):
                     data_main_0 = float(self.counts_main_array[0])
@@ -1891,8 +1895,7 @@ class BaseCounterNI(BaseCounter):
                 while True:
                     avail = self.task_counter_ctr.in_stream.avail_samp_per_chan
                     if avail<read_sample_num:
-                        if not self.time_sleep(self.apd_sample_check_interval):
-                            return None
+                        self.time_sleep(self.apd_sample_check_interval)
                     else:
                         break
 
@@ -1908,7 +1911,7 @@ class BaseCounterNI(BaseCounter):
                     return None
 
                 if self.is_cancel:
-                    return None
+                    raise DeviceCanceled()
 
                 if (data_main_0 is None) and (data_ref_0 is None):
                     data_main_0 = float(self.counts_main_array[0])
@@ -1945,7 +1948,7 @@ class BaseCounterNI(BaseCounter):
                     return None
 
                 if self.is_cancel:
-                    return None
+                    raise DeviceCanceled()
 
                 data = read_array[0, :read_sample_num]
                 gate1 = read_array[1, :read_sample_num]
