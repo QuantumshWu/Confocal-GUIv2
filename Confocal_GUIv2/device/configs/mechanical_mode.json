@@ -27,7 +27,8 @@
       "laser_handle": "$device:laser",
       "wavelength_lb": 737.1,
       "wavelength_ub": 737.135,
-      "freq_thre": 0.025,
+      "freq_thre": 0.015,
+      "freq_deadzone": 0.005,
       "unique_id": 1
     }
   },
@@ -41,7 +42,7 @@
     "type": "DSG836",
     "params": {
       "visa_address": "GPIB0::17::INSTR",
-      "power_ub": -5,
+      "power_ub": -10,
       "power_lb": null,
       "unique_id": "GPIB0::17::INSTR"
     }
@@ -58,6 +59,12 @@
     "params": {
       "ip": "10.199.199.1",
       "unique_id": "10.199.199.1"
+    }
+  },
+  "counter_cam": {
+    "type": "Camera",
+    "params": {
+      "unique_id": null
     }
   }
 }

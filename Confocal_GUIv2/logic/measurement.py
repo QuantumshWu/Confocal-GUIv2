@@ -1022,30 +1022,83 @@ class LiveMeasurement(BaseMeasurement):
     update_mode_valid=['replace', 'create'],
 )
 class ModeMeasurement(BaseMeasurement):
-    def __init__(self, config:BaseMeasurementConfig, power:float):
+    def __init__(self, config:BaseMeasurementConfig, power, wavelength, is_adaptive, ref_freq, h10_ratio, beta, exposure_h1):
         super().__init__(config=config)
         self.power = power
+        self.wavelength = wavelength
+        self.is_adaptive = is_adaptive
+        self.ref_freq = ref_freq
+        self.h10_ratio = h10_ratio
+        self.beta = beta
+        self.exposure_h1 = exposure_h1
+        self.h0_single_read = None
         xlabel = f'{self.xlabel} ({self.unit})'
         if self.counter_mode=='apd_sample':
-            ylabel = f'{self.ylabel}/{self.sample_num}pts'
+            ylabel = f'{self.ylabel}/{self.sample_num}pts{" adaptive" if self.is_adaptive else ""}'
         else:
-            ylabel = f'{self.ylabel}/{self.exposure}s'
+            ylabel = f'{self.ylabel}/{self.exposure}s{" adaptive" if self.is_adaptive else ""}'
         zlabel = f'{self.zlabel}'
         self.labels = [xlabel, ylabel, zlabel]
+        if self.is_adaptive is True:
+            self._cali_h0()
+
+    def _cali_h0(self):
+        self.to_initial_state()
+        self.device_to_state(value=[self.ref_freq,])
+        # calibrate the average base counts per single read for h0 or lambda_0
+        counts = self.counter.read_counts(exposure=self.exposure, sample_num=self.sample_num, parent=self)[0]
+        t0 = time.time()
+        n_read = 1
+        while (time.time()-t0)<self.exposure_h1:
+            counts += self.counter.read_counts(exposure=self.exposure, sample_num=self.sample_num, parent=self)[0]
+            n_read += 1
+        self.h0_single_read = counts/n_read
+        estimated_n_read = np.log(self.beta)/(self.h0_single_read*(1+np.log(self.h10_ratio)-self.h10_ratio))
+        print(f'[mode] estimated lambda_0:{self.h0_single_read}, n_read:{estimated_n_read}')
+        self.to_final_state()
+
+    def _counts_threshold(self, n):
+        # calculate the counts threshold which indicates when to stop based on beta, n, lambda_0, h10_ratio
+        # a = ln(beta/(1-alpha)) = ln(beta)
+        # log-likelyhood ratio for poisson distribution is
+        # llr = counts*ln(lambda_1/lambda_0) - (lambda_1-lambda_0)
+        # sum_1_to_n(llr_i) < a --> counts_threshold
+        return (np.log(self.beta) + n*self.h0_single_read*(self.h10_ratio-1))/np.log(self.h10_ratio)
 
     def to_initial_state(self):
-        pass
+        self.rf.on = True
+        self.rf.power = self.power
+        self.laser_stabilizer.on = True
+        self.laser_stabilizer.wavelength = self.wavelength
     def device_to_state(self, value):
-        pass
+        self.rf.frequency = value[0]*1e6
     def to_final_state(self):
-        pass
+        self.rf.on = False
+        self.laser_stabilizer.on = False
     def get_data_y(self):
-        pass
+
+        counts = self.counter.read_counts(exposure=self.exposure, sample_num=self.sample_num, parent=self)[0]
+        if counts is False:
+            return False
+        t0 = time.time()
+        n_read = 1
+
+        while (self.is_adaptive is True) and (time.time()-t0)<self.exposure_h1:
+            if counts < self._counts_threshold(n_read):
+                # if meet h0 then return otherwise continue
+                break
+            counts_add = self.counter.read_counts(exposure=self.exposure, sample_num=self.sample_num, parent=self)[0]
+            if counts_add is False:
+                return False
+            counts += counts_add
+            n_read += 1
+
+        return [counts/n_read,]
 
     def read_x(self):
-        pass
+        return self.rf.frequency/1e6
     def set_x(self, value):
-        pass
+        self.device_to_state(value=value)
 
 
     @classmethod
@@ -1059,9 +1112,12 @@ class ModeMeasurement(BaseMeasurement):
         counter='counter', pulse='pulse', rf='rf',
         laser='laser', laser_stabilizer='laser_stabilizer',
         # device_names
-        power=10, is_adaptive=False,
-        h0_hz=1000, h1_hz=1500,
-        alpha=0.001, beta=0.05,
+        power=-20, wavelength=None,
+        is_adaptive=False,
+        ref_freq=500,
+        # 500MHz is not resonate frequency
+        h10_ratio=1.5, beta=0.10,
+        # h1/h0 ratio, and beta the type II error of H1
         exposure_h1 = 1,
         # params for sequential probability ratio test (SPRT)
         # other params for measurement if any

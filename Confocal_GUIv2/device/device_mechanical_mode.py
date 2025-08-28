@@ -327,7 +327,8 @@ class DSG836(BaseRF):
            
     @BaseDevice.ManagedProperty('bool', thread_safe=True)
     def on(self):
-        self._on = True if (eval(self.handle.query('OUTPut:STATe?')[:-1]) is True) else False
+        self._on = True if (eval(self.handle.query('OUTPut:STATe?')[:-1]) == True) else False
+        # will return 0, 1
         return self._on
     
     @on.setter
@@ -382,20 +383,28 @@ class Camera(BaseCounter):
         self.cap.release()
         self.cv2.destroyAllWindows()
 
-    def read_frame(self):
-        ret, frame = self.cap.read()
-        gray = self.cv2.cvtColor(frame, self.cv2.COLOR_BGR2GRAY)
-        frame3 = self.cv2.merge([gray, gray, gray])
-        return frame3.astype(np.float32)
+    def read_frame(self, counts=1):
+        frame_ = None
+        for _ in range(counts):
+            ret, frame = self.cap.read()
+            gray = self.cv2.cvtColor(frame, self.cv2.COLOR_BGR2GRAY)
+            frame3 = self.cv2.merge([gray, gray, gray])
+            frame_large = frame3.astype(np.float32)
+            if frame_ is None:
+                frame_ = frame_large
+            else:
+                frame_ += frame_large
+
+        return (frame_/counts).astype(np.uint8)[self.x_l:self.x_u, self.y_l:self.y_u]
 
     def monitor(self):
         # display image until keyboard interrupt
         try:
-            handle = None
+            self.handle = None
             while True:
-                self.frame_ = self.image_sum(counts=5)
+                self.frame_ = self.read_frame(counts=5)
                 image = self.PILImage.fromarray(self.frame_)
-                if handle is None:
+                if self.handle is None:
                     self.handle = self.display(image, display_id = True)
                 else:
                     self.handle.update(image)
@@ -406,16 +415,7 @@ class Camera(BaseCounter):
             return
 
     def image_sum(self, counts=5):
-        frame_ = None
-        for _ in range(counts):
-            frame_large = self.read_frame()
-            if frame_ is None:
-                frame_ = frame_large
-            else:
-                frame_ += frame_large
-                
-        self.frame_ = (frame_/counts).astype(np.uint8)[self.x_l:self.x_u,self.y_l:self.y_u,:]
-        return np.sum(self.frame_)
+        return np.sum(self.read_frame(counts=counts))
 
     @property
     def counter_mode_valid(self):

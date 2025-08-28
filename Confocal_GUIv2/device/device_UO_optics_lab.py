@@ -115,7 +115,7 @@ class DSG836(BaseRF):
     on for if output is on
     """
     
-    def __init__(self, unique_id, visa_address=None, power_ub=10, power_lb=None):
+    def __init__(self, unique_id, visa_address='USB0::0x1AB1::0x099C::DSG8M223900103::INSTR', power_ub=-5, power_lb=None):
         import pyvisa
         rm = pyvisa.ResourceManager()
         self.handle = rm.open_resource(visa_address)
@@ -145,7 +145,8 @@ class DSG836(BaseRF):
            
     @BaseDevice.ManagedProperty('bool', thread_safe=True)
     def on(self):
-        self._on = True if (eval(self.handle.query('OUTPut:STATe?')[:-1]) is True) else False
+        self._on = True if (eval(self.handle.query('OUTPut:STATe?')[:-1]) == True) else False
+        # will return 0, 1
         return self._on
     
     @on.setter

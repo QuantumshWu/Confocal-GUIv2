@@ -21,6 +21,8 @@ from scipy.optimize import OptimizeWarning
 from IPython import get_ipython
 from IPython.display import display, HTML
 
+from Confocal_GUIv2.helper import float2str_eng
+
 
 font_path  = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'helper', 'helvetica-light-587ebe5a59211.ttf'))
 font_name = None
@@ -1368,7 +1370,7 @@ class Live2DDis(BaseLivePlotter):
             self.line_h = self.axdis.axhline(self.ylim_max, color=cmap(0.95), linewidth=matplotlib.rcParams['legend.fontsize']/2)
 
             self.cax.set_yticks([y_min, y_max])
-            self.cax.set_yticklabels([f'{ytick:.0f}' for ytick in [y_min, y_max]])
+            self.cax.set_yticklabels([float2str_eng(ytick, length=5) for ytick in [y_min, y_max]])
             self.drag = DragHLine(self.line_l, self.line_h, self.update_clim, self.axdis)
         self.fig.canvas.draw()
         # must be here to display self.line_l etc. after plot done, don't know why?

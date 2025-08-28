@@ -961,14 +961,30 @@ class DeviceGUI(QWidget):
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(6)
 
+        typ = meta['gui_type']
         # Bounds
-        lb_s = float2str_eng(lb, length=self.MAX_LEN) if lb is not None else '-∞'
-        ub_s = float2str_eng(ub, length=self.MAX_LEN) if ub is not None else '∞'
         box = QHBoxLayout()
-        label_range = QLabel('Range:')
-        label_range.setFixedSize(100, 30)
-        box.addWidget(label_range, alignment=Qt.AlignLeft)
-        rng = QLineEdit(f"{lb_s} to {ub_s}")
+        if typ == 'float':
+            lb_s = float2str_eng(lb, length=self.MAX_LEN) if lb is not None else '-∞'
+            ub_s = float2str_eng(ub, length=self.MAX_LEN) if ub is not None else '∞'
+            label_range = QLabel('Range:')
+            label_range.setFixedSize(100, 30)
+            box.addWidget(label_range, alignment=Qt.AlignLeft)
+            rng = QLineEdit(f"{lb_s} to {ub_s}")
+        elif typ == 'bool':
+            label_range = QLabel('Valid:')
+            label_range.setFixedSize(100, 30)
+            box.addWidget(label_range, alignment=Qt.AlignLeft)
+            preview = ", ".join(['True', 'False'])
+            rng = QLineEdit(f"{preview}")
+        elif typ == 'str':
+            label_range = QLabel('Valid:')
+            label_range.setFixedSize(100, 30)
+            box.addWidget(label_range, alignment=Qt.AlignLeft)
+            valid = getattr(self.device, f"{prop}_valid", [])
+            preview = ", ".join(valid)
+            rng = QLineEdit(f"{preview}")
+
         rng.setEnabled(False)
         rng.setFixedSize(300, 30)
         box.addWidget(rng)
@@ -990,7 +1006,6 @@ class DeviceGUI(QWidget):
         stack.setStyleSheet("background: transparent; border: none;")
         stack.setGraphicsEffect(None)
         # remove Fluentstackedwidget default background and effect
-        typ = meta['gui_type']
 
         # Page 0: plain text input
         w0 = QWidget()
@@ -1007,8 +1022,9 @@ class DeviceGUI(QWidget):
             editor.setFixedHeight(30)
         elif typ == 'bool':
             editor = QComboBox(); editor.addItems(['True','False'])
-        else:
+        elif typ == 'str':
             editor = QComboBox(); editor.addItems(getattr(self.device, f"{prop}_valid", []))
+
         editor.setFixedWidth(300)
         editor.setEnabled(has_setter)
         h0.addWidget(editor)
@@ -1627,13 +1643,45 @@ class PulseGUI(QWidget):
         self.last_load_state = None 
         self.last_save_state = None
 
+    def _best_unit_and_text(self, value_ns: int):
+        """
+        Choose display unit by the shortest numeric length (excluding '.').
+        Special case: if value is 0, always use 'ns'.
+        Tiebreaker for non-zero: prefer the largest unit (ms > us > ns).
+        Returns (unit, text) with a compact decimal string (no scientific notation).
+        """
+        # Special case: zero -> '0' ns
+        if int(value_ns) == 0:
+            return ('ns', '0')
+
+        candidates = [('ns', 1), ('us', 1e3), ('ms', 1e6)]
+        # Lower is better in tie (ms first, then us, then ns)
+        priority = {'ms': 0, 'us': 1, 'ns': 2}
+
+        best = None
+        best_key = None
+        for unit, factor in candidates:
+            v = value_ns / factor
+            # Format with enough precision, then strip trailing zeros and trailing dot
+            s = f"{v:.9f}".rstrip('0').rstrip('.')
+            if s == '':
+                s = '0'
+            # Count only digits (exclude the decimal point)
+            digits = sum(c.isdigit() for c in s)
+
+            key = (digits, priority[unit])
+            if best_key is None or key < best_key:
+                best_key = key
+                best = (unit, s)
+        return best
+
 
     def load_data(self):
         """
         load self.device_handle.delay_array, self.device_handle.data_matrix back to GUI
         to recover GUI state after reopen GUI window
         """
-
+        self.channel_names_map = [f'Ch{ch}' for ch in range(8)]
         while self.layout_dataset.count() > 0:
             item = self.layout_dataset.takeAt(0)
             widget = item.widget()
@@ -1664,19 +1712,10 @@ class PulseGUI(QWidget):
                 combo_box.setCurrentText('str (ns)')
                 line_edit.setText(str(delay_value))
             else:
-                duration = int(delay_value)
-                if duration==0:
-                    combo_box.setCurrentText('ns')
-                    line_edit.setText(str(duration))
-                elif duration%1000000==0:
-                    combo_box.setCurrentText('ms')
-                    line_edit.setText(str(duration//1000000))
-                elif duration%1000==0:
-                    combo_box.setCurrentText('us')
-                    line_edit.setText(str(duration//1000))
-                else:
-                    combo_box.setCurrentText('ns')
-                    line_edit.setText(str(duration))
+                # Pick the shortest display (digits only), tie → ns
+                unit, txt = self._best_unit_and_text(int(delay_value))
+                combo_box.setCurrentText(unit)
+                line_edit.setText(txt)
 
         self.bracket_exists = False
         self.drag_container = DragContainer()
@@ -1695,16 +1734,10 @@ class PulseGUI(QWidget):
                 combo_box.setCurrentText('str (ns)')
                 line_edit.setText(str(row_data[0]))
             else:
-                duration = int(row_data[0])
-                if duration%1000000==0:
-                    combo_box.setCurrentText('ms')
-                    line_edit.setText(str(duration//1000000))
-                elif duration%1000==0:
-                    combo_box.setCurrentText('us')
-                    line_edit.setText(str(duration//1000))
-                else:
-                    combo_box.setCurrentText('ns')
-                    line_edit.setText(str(duration))
+                # Numeric (ns internal): choose best unit by shortest digits
+                unit, txt = self._best_unit_and_text(int(row_data[0]))
+                combo_box.setCurrentText(unit)
+                line_edit.setText(txt)
 
 
             for j in range(1, 9):  
