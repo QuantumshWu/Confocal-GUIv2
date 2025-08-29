@@ -71,6 +71,7 @@ class PlotController:
             except Exception as e:
                 log_error(e)
                 self.is_interrupt = True
+                # is_interrupt used by task to determine if end normally
             finally:
                 self.stop()
                 return self.live_plot

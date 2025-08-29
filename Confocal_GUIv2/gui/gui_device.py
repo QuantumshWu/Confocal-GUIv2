@@ -1527,11 +1527,9 @@ class PulseGUI(QWidget):
 
     def handle_text_change(self, text, combo_box):
         """
-        Robust unit switching to avoid parse errors while typing.
-        - Intermediate (e.g., '100-', 'x+'): force 'str (ns)' and disable the unit combo.
-        - Invalid: same as Intermediate (treat as string to be safe).
-        - Acceptable + pure number: enable units; default to 'ns' if currently 'str (ns)'.
-        - Acceptable + involves 'x': force 'str (ns)' and disable the unit combo.
+        Switch to 'str (ns)' ONLY when the expression contains 'x'.
+        For pure numeric expressions (including intermediate typing like '-', '100-'),
+        keep the unit combo enabled and do not flip to 'str (ns)' until we know it's an 'x' expr.
         """
         s = (text or "").strip()
         if not s:
@@ -1539,32 +1537,29 @@ class PulseGUI(QWidget):
             combo_box.setEnabled(False)
             return
 
-        # Ask the editor's validator for its state
+        # If the user uses 'x' (anywhere) -> force string(ns)
+        if 'x' in s.lower():
+            if combo_box.currentText() != 'str (ns)':
+                combo_box.setCurrentText('str (ns)')
+            combo_box.setEnabled(False)
+            return
+
+        # Numeric-only path: never auto-switch to 'str (ns)' just because of Intermediate
         editor = self.sender()
         val = editor.validator() if editor is not None else None
         state = None
         if isinstance(val, QValidator):
             state, _, _ = val.validate(s, 0)
 
-        # While typing or invalid -> treat as string to prevent int(...) in read_*.
-        if state in (QValidator.Intermediate, QValidator.Invalid, None):
-            if combo_box.currentText() != 'str (ns)':
-                combo_box.setCurrentText('str (ns)')
-            combo_box.setEnabled(False)
-            return
-
-        # Acceptable: decide by strict parser (pure number vs expression with x)
-        m = FLOAT_OR_X_PARSING_PATTERN.fullmatch(s)
-        if m and m.group('pure_num') is not None:
-            # Pure number -> allow units
+        if state == QValidator.Acceptable:
+            # Valid pure number -> enable units; default to ns if currently 'str (ns)'
             combo_box.setEnabled(True)
             if combo_box.currentText() == 'str (ns)':
                 combo_box.setCurrentText('ns')
         else:
-            # Any expression with 'x' -> string(ns)
-            if combo_box.currentText() != 'str (ns)':
-                combo_box.setCurrentText('str (ns)')
-            combo_box.setEnabled(False)
+            # Still typing (Intermediate/Invalid) -> keep units, keep enabled
+            combo_box.setEnabled(True)
+            # DO NOT flip to 'str (ns)' here
 
 
     def on_add_bracket(self, start_index=0, end_index=-1):

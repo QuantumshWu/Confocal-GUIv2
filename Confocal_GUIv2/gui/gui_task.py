@@ -1,7 +1,6 @@
 from .gui_device import *
 from Confocal_GUIv2.helper import log_error, str2python, python2str
 
-
 import importlib
 from dataclasses import dataclass, field
 import weakref
@@ -562,13 +561,28 @@ class _CallerRow(QWidget):
 
 
 class TaskDialog(QWidget):
+    """
+    Dialog-only implementation with per-task kwargs caching.
+
+    What it guarantees:
+    - Each task has its own cached kwargs text (self._kwargs_cache).
+    - Switching tasks: save previous edits, then load the new task's cached kwargs,
+      or populate defaults from the function signature if no cache exists.
+    - showEvent: refresh UI without wiping user edits (silent combo rebuild +
+      restore previous selection; only populate when needed).
+    - "Reset kwargs" button (placed to the LEFT of Start) resets ONLY the current
+      task's kwargs to defaults (does NOT clear to empty).
+    """
     def __init__(self, main_gui, parent=None):
         super().__init__(parent)
         self._main_gui = main_gui
         self._runner: Optional[TaskRunner] = None
         self._caller_rows: List[_CallerRow] = []
+        self._kwargs_cache: Dict[str, str] = {}   # task_name -> kwargs text
+        self._last_task_name: Optional[str] = None
         self._build_ui()
 
+    # ---------------- UI ----------------
     def _build_ui(self):
         _mod, tasks = _discover_tasks()
 
@@ -583,24 +597,25 @@ class TaskDialog(QWidget):
         self.combo_task = QComboBox()
         self.combo_task.setFixedHeight(30)
         for name, fn in tasks:
-            self.combo_task.addItem(name, fn)
+            self.combo_task.addItem(name, fn)  # keep function in userData
         row.addWidget(self.combo_task, 1)
         layout.addLayout(row)
 
         # Kwargs editor
-        self.edit_kwargs = DynamicPlainTextEdit(text="",
+        self.edit_kwargs = DynamicPlainTextEdit(
+            text="",
             placeholder_text="Each line as  key = value   (leave empty => None; Python literals supported)"
         )
         self.edit_kwargs.setMinimumHeight(120)
         layout.addWidget(self.edit_kwargs)
 
-        # Caller binding group (multi-rows)
+        # Caller binding group
         box = QGroupBox("Caller Binding")
         v = QVBoxLayout(box)
         self.rows_area = QVBoxLayout()
         v.addLayout(self.rows_area)
 
-        # row controls
+        # Row controls
         ctrl = QHBoxLayout()
         self.btn_add_row = QPushButton("Add Caller")
         self.btn_add_row.setFixedHeight(30)
@@ -609,32 +624,43 @@ class TaskDialog(QWidget):
         v.addLayout(ctrl)
         layout.addWidget(box)
 
-        # Running status & Start/Stop
+        # Status + Stop / Reset / Start (Reset must be to the LEFT of Start)
         runrow = QHBoxLayout()
-        self.lbl_running = QLabel("")   # will show "Running..." when active
+        self.lbl_running = QLabel("")
         self.lbl_running.setFixedHeight(30)
         runrow.addWidget(self.lbl_running)
         runrow.addStretch()
+
+        
+        self.btn_reset = QPushButton("Reset kwargs")  # reset current task to defaults
+        self.btn_reset.setFixedSize(130, 30)          # placed left of Start
         self.btn_stop = QPushButton("Stop")
         self.btn_stop.setFixedSize(100, 30)
         self.btn_start = QPushButton("Start")
         self.btn_start.setFixedSize(100, 30)
+
         self.btn_stop.setEnabled(False)
+
+        runrow.addWidget(self.btn_reset)  # Reset (left)
         runrow.addWidget(self.btn_stop)
-        runrow.addWidget(self.btn_start)
+        runrow.addWidget(self.btn_start)  # Start (right)
         layout.addLayout(runrow)
 
         # Signals
         self.btn_add_row.clicked.connect(self._on_add_row)
         self.btn_start.clicked.connect(self._on_start)
         self.btn_stop.clicked.connect(self._on_stop_clicked)
+        self.btn_reset.clicked.connect(self._on_reset_clicked)
         self.combo_task.currentIndexChanged.connect(self._on_task_changed)
 
-        # init populate
-        self._on_task_changed()
+        # Initialize: if there are tasks, select the first and populate defaults
+        if self.combo_task.count() > 0:
+            self.combo_task.setCurrentIndex(0)
+            self._on_task_changed()
 
-    # -- helpers for dynamic rows --
+    # ---------------- Rows ----------------
     def _clear_rows(self):
+        """Remove all caller binding rows."""
         for i in reversed(range(self.rows_area.count())):
             item = self.rows_area.itemAt(i)
             w = item.widget()
@@ -643,35 +669,68 @@ class TaskDialog(QWidget):
         self._caller_rows.clear()
 
     def _on_add_row(self, preset_name: Optional[str] = None):
+        """Append a caller row; preselect by name if provided."""
         candidates = list(getattr(self, "_task_callers", []))
-
         row = _CallerRow(self._main_gui, candidates, parent=self)
         if preset_name:
             idx = row.combo_caller.findText(preset_name)
             if idx >= 0:
                 row.combo_caller.setCurrentIndex(idx)
         row.btn_remove.clicked.connect(lambda: self._remove_row(row))
-
         self.rows_area.addWidget(row)
         self._caller_rows.append(row)
 
     def _remove_row(self, row: _CallerRow):
+        """Remove a specific caller row."""
         if row in self._caller_rows:
             self._caller_rows.remove(row)
             row.setParent(None)
 
-
     def _refresh_tabs(self):
-        """Refresh tab dropdowns on all caller rows. No layout/logic changes here."""
-        rows = getattr(self, "_caller_rows", [])
-        for row in rows:
+        """Ask each row to refresh its Existing-Tab dropdown."""
+        for row in getattr(self, "_caller_rows", []):
             try:
                 row._refresh_tabs()
             except Exception:
                 pass
 
+    # ---------------- Kwargs helpers ----------------
+    def _current_task_name(self) -> str:
+        """Return the visible name of the selected task."""
+        return self.combo_task.currentText().strip()
+
+    def _save_current_kwargs(self) -> None:
+        """Save the editor text into cache for the CURRENT task."""
+        name = self._current_task_name()
+        if name:
+            self._kwargs_cache[name] = self.edit_kwargs.toPlainText()
+
+    def _load_cached_or_defaults(self, task_name: str, task_fn: Optional[Callable]) -> None:
+        """
+        Load kwargs text for 'task_name':
+        - Use cache if available;
+        - Otherwise populate defaults from function signature.
+        """
+        if not callable(task_fn):
+            self.edit_kwargs.setPlainText("")
+            return
+        cached = self._kwargs_cache.get(task_name, None)
+        if cached is not None:
+            self.edit_kwargs.setPlainText(cached)
+        else:
+            self._populate_kwargs_from_signature(task_fn)
+
+    def _ensure_kwargs_present(self) -> None:
+        """
+        If the editor is empty (first show / no cache), fill it with cached text
+        or fallback defaults. If non-empty, DO NOT overwrite user edits.
+        """
+        if self.edit_kwargs.toPlainText().strip():
+            return
+        self._load_cached_or_defaults(self._current_task_name(), self.combo_task.currentData())
+
     def _fill_missing_kwargs_with_none(self, task_fn: Callable, kwargs: Dict[str, Any]) -> Dict[str, Any]:
-        """Fill missing parameters with None; ignore *args/**kwargs and self."""
+        """Ensure all non-var positional/keyword parameters exist in kwargs (value None if missing)."""
         try:
             sig = inspect.signature(task_fn)
         except Exception:
@@ -686,13 +745,12 @@ class TaskDialog(QWidget):
         return kwargs
 
     def _populate_kwargs_from_signature(self, task_fn: Callable) -> None:
-        """Show 'key = None' for no-default and default-None; else python2str(default)."""
+        """Populate editor with defaults derived from the function signature."""
         try:
             sig = inspect.signature(task_fn)
         except Exception:
             self.edit_kwargs.setPlainText("")
             return
-
         lines: List[str] = []
         for name, p in sig.parameters.items():
             if name == "self":
@@ -706,23 +764,14 @@ class TaskDialog(QWidget):
         self.edit_kwargs.setPlainText("\n".join(lines))
 
     def _suggest_callers_for_task(self, task_fn: Callable) -> List[str]:
+        """Return caller names referenced directly by the task; fallback to all available callers."""
         cand = _guess_callers_from_task(task_fn)
         if not cand:
             cand = sorted(_measurement_callers_in_logic().keys())
         return cand
 
-    def _on_task_changed(self):
-        task_fn = self.combo_task.currentData()
-        if callable(task_fn):
-            self._populate_kwargs_from_signature(task_fn)
-
-            self._task_callers = _guess_callers_from_task(task_fn)
-            self._clear_rows()
-            for name in self._task_callers:
-                self._on_add_row(preset_name=name)
-
-    # -- parse kwargs --
     def _parse_kwargs(self) -> Dict[str, Any]:
+        """Parse the editor text into a dict of kwargs."""
         text = self.edit_kwargs.toPlainText()
         kwargs: Dict[str, Any] = {}
         for raw in text.splitlines():
@@ -740,25 +789,45 @@ class TaskDialog(QWidget):
                 kwargs[key] = str2python(val_str)
         return kwargs
 
-    # -- running controls --
+    # ---------------- Run controls ----------------
     def _set_running_ui(self, running: bool):
+        """Enable/disable controls based on running state."""
         self.lbl_running.setText("Running..." if running else "")
         self.btn_start.setEnabled(not running)
         self.btn_stop.setEnabled(running)
+        self.btn_reset.setEnabled(not running)
+        self.btn_add_row.setEnabled(not running)
 
     def _on_stop_clicked(self):
+        """Request the running task to stop."""
         if self._runner is not None:
             self._runner.request_stop()
 
-    # ------------- Start -------------
+    def _on_reset_clicked(self):
+        """
+        Reset ONLY the current task's kwargs to defaults (not empty),
+        and write the new defaults into the cache immediately.
+        """
+        task_fn = self.combo_task.currentData()
+        if callable(task_fn):
+            self._populate_kwargs_from_signature(task_fn)
+            self._kwargs_cache[self._current_task_name()] = self.edit_kwargs.toPlainText()
+
     def _on_start(self):
+        """Parse kwargs, build the plan, and launch the TaskRunner."""
         try:
+            # Persist current editor text into cache for the currently selected task
+            self._save_current_kwargs()
+
             task_fn = self.combo_task.currentData()
+            if not callable(task_fn):
+                QtWidgets.QMessageBox.warning(self, "Error", "No task selected.")
+                return
+
             kwargs = self._parse_kwargs()
-            # Auto-fill missing with None (kept for safety)
             kwargs = self._fill_missing_kwargs_with_none(task_fn, kwargs)
 
-            # Build plan from rows (allow 0 rows)
+            # Build plan (caller bindings may be empty)
             plan = TaskPlan(task_func=task_fn, task_kwargs=kwargs)
             for row in self._caller_rows:
                 name, mode, tab_data = row.read()
@@ -770,7 +839,7 @@ class TaskDialog(QWidget):
                         return
                     _tw, _idx, plot = tab_data
                     plan.bound_a[name] = plot
-                else:  # 'C'
+                else:
                     plan.bound_c.add(name)
 
             # Create & register runner
@@ -780,7 +849,7 @@ class TaskDialog(QWidget):
                 self._main_gui._task_runners = []
             self._main_gui._task_runners.append(runner)
 
-            # Connect signals: update both this dialog and the main GUI button
+            # Wire signals
             runner.sig_running.connect(self._set_running_ui)
             runner.sig_running.connect(self._main_gui._on_task_running_changed)
             runner.finished.connect(lambda: self._on_runner_finished(runner))
@@ -793,6 +862,7 @@ class TaskDialog(QWidget):
             QMessageBox.critical(self, "Error", f"{type(e).__name__}: {e}")
 
     def _on_runner_finished(self, runner: TaskRunner):
+        """Cleanup after the runner finishes."""
         try:
             if hasattr(self._main_gui, "_task_runners") and runner in self._main_gui._task_runners:
                 self._main_gui._task_runners.remove(runner)
@@ -801,7 +871,84 @@ class TaskDialog(QWidget):
         finally:
             self._set_running_ui(False)
 
-    # ------- Lifecycle -------
+    # ---------------- Lifecycle ----------------
+    def showEvent(self, event):
+        """
+        Refresh tabs/tasks without overwriting user edits:
+        - Save current task's kwargs into cache.
+        - Rebuild the task combo silently and try to restore the previous selection.
+        - If restoration fails (first show or task list changed), explicitly load
+          cache/defaults for the new selection and refresh caller rows.
+        - Finally, if the editor is still empty, ensure it is populated.
+        """
+        # Save current kwargs first
+        self._save_current_kwargs()
+
+        # Refresh available tabs for caller rows
+        self._refresh_tabs()
+
+        # Rebuild task combo silently
+        _mod, tasks = _discover_tasks()
+        prev_name = self._current_task_name()
+
+        self.combo_task.blockSignals(True)
+        try:
+            self.combo_task.clear()
+            for name, fn in tasks:
+                self.combo_task.addItem(name, fn)
+
+            restored = False
+            if prev_name:
+                i = self.combo_task.findText(prev_name)
+                if i >= 0:
+                    self.combo_task.setCurrentIndex(i)
+                    restored = True
+            if not restored and self.combo_task.count() > 0:
+                self.combo_task.setCurrentIndex(0)
+        finally:
+            self.combo_task.blockSignals(False)
+
+        # If we couldn't restore, load for the current selection and rebuild callers
+        current_fn = self.combo_task.currentData()
+        current_name = self._current_task_name()
+        if not (prev_name and self.combo_task.findText(prev_name) >= 0):
+            self._load_cached_or_defaults(current_name, current_fn)
+            if callable(current_fn):
+                self._task_callers = self._suggest_callers_for_task(current_fn)
+                self._clear_rows()
+                for n in self._task_callers:
+                    self._on_add_row(preset_name=n)
+            self._last_task_name = current_name
+
+        # If editor is empty for any reason, populate cache/defaults
+        self._ensure_kwargs_present()
+
+        super().showEvent(event)
+
+    def _on_task_changed(self):
+        """
+        Handle user selection change:
+        - Save previous task's edits to cache.
+        - Load new task's cached/default kwargs.
+        - Rebuild caller rows for the new task.
+        """
+        # Save previous task edits
+        if self._last_task_name:
+            self._kwargs_cache[self._last_task_name] = self.edit_kwargs.toPlainText()
+
+        task_fn = self.combo_task.currentData()
+        new_name = self._current_task_name()
+
+        if callable(task_fn):
+            self._load_cached_or_defaults(new_name, task_fn)
+            self._task_callers = self._suggest_callers_for_task(task_fn)
+            self._clear_rows()
+            for name in self._task_callers:
+                self._on_add_row(preset_name=name)
+
+        self._last_task_name = new_name
+
+    # (Optional) Keep default behavior for these events
     def closeEvent(self, event):
         super().closeEvent(event)
 
@@ -811,30 +958,6 @@ class TaskDialog(QWidget):
             pass
         super().hideEvent(event)
 
-    def showEvent(self, event):
-         # 1) refresh available tabs
-        self._refresh_tabs()
-
-        # 2) refresh task combo (simple addItem loop)
-        _mod, tasks = _discover_tasks()
-        prev = self.combo_task.currentText()
-
-        self.combo_task.blockSignals(True)  # avoid triggering _on_task_changed mid-refresh
-        self.combo_task.clear()
-        for name, fn in tasks:
-            self.combo_task.addItem(name, fn)   # keep fn as userData
-        self.combo_task.blockSignals(False)
-
-        # try keep previous selection; else select first and update kwargs/callers
-        idx = self.combo_task.findText(prev)
-        if idx >= 0:
-            self.combo_task.setCurrentIndex(idx)
-        else:
-            if self.combo_task.count() > 0:
-                self.combo_task.setCurrentIndex(0)
-                self._on_task_changed()
-
-        super().showEvent(event)
 
 
 global task_window

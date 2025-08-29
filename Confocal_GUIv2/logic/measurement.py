@@ -1042,7 +1042,7 @@ class ModeMeasurement(BaseMeasurement):
         self.labels = [xlabel, ylabel, zlabel]
 
     def _cali_h0(self):
-        self.to_initial_state()
+        prev_freq = self.read_x()
         self.device_to_state(value=[self.ref_freq,])
         # calibrate the average base counts per single read for h0 or lambda_0
         counts = self.counter.read_counts(exposure=self.exposure, sample_num=self.sample_num, parent=self)[0]
@@ -1054,7 +1054,7 @@ class ModeMeasurement(BaseMeasurement):
         self.h0_single_read = counts/n_read
         estimated_n_read = np.log(self.beta)/(self.h0_single_read*(1+np.log(self.h10_ratio)-self.h10_ratio))
         print(f'[mode] estimated lambda_0:{self.h0_single_read}, n_read:{estimated_n_read}')
-        self.to_final_state()
+        self.device_to_state(value=[prev_freq,])
 
     def _counts_threshold(self, n):
         # calculate the counts threshold which indicates when to stop based on beta, n, lambda_0, h10_ratio
@@ -1077,8 +1077,7 @@ class ModeMeasurement(BaseMeasurement):
     def get_data_y(self):
         if (self.is_adaptive is True) and (self.h0_single_read is None):
             self._cali_h0()
-            self.to_initial_state()
-            self.device_to_state(value=self.data_x[0])
+
         counts = self.counter.read_counts(exposure=self.exposure, sample_num=self.sample_num, parent=self)[0]
         t0 = time.time()
         n_read = 1
@@ -1109,7 +1108,7 @@ class ModeMeasurement(BaseMeasurement):
         counter='counter', pulse='pulse', rf='rf',
         laser='laser', laser_stabilizer='laser_stabilizer',
         # device_names
-        power=-20, wavelength=None,
+        power=-20, wavelength=737.11,
         is_adaptive=False,
         ref_freq=500,
         # 500MHz is not resonate frequency
