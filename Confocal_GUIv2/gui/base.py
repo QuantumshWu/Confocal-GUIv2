@@ -1577,6 +1577,6 @@ class DynamicPlainTextEdit(FluentPlainTextEdit):
         frame = self.frameWidth() * 2
         margin = self._doc_margin * 2
 
-        total = np.ceil(line_count * line_height + frame + margin) + 1
+        total = int(np.ceil(line_count * line_height + frame + margin) + 1)
         self.setFixedHeight(total)
         self.updateGeometry()

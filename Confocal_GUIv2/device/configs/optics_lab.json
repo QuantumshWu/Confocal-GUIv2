@@ -1,0 +1,34 @@
+{
+  "counter": {
+    "type": "USB6346",
+    "params": {
+      "unique_id": null,
+      "port_config": "{'analog_signal':'/Dev1/ai0', 'analog_gate':'/Dev1/ai1', 'analog_gate_ref':'/Dev1/ai2',",
+      "'apd_signal'": "'PFI3', 'apd_gate':'PFI4', 'apd_gate_ref':'PFI5', 'dev_num':'Dev1'}"
+    }
+  },
+  "scanner": {
+    "type": "USB6346",
+    "params": {
+      "unique_id": null,
+      "port_config": "{'analog_signal':'/Dev1/ai0', 'analog_gate':'/Dev1/ai1', 'analog_gate_ref':'/Dev1/ai2',",
+      "'apd_signal'": "'PFI3', 'apd_gate':'PFI4', 'apd_gate_ref':'PFI5', 'dev_num':'Dev1'}"
+    }
+  },
+  "pulse": {
+    "type": "Pulse",
+    "params": {
+      "unique_id": null,
+      "ip": "169.254.8.2"
+    }
+  },
+  "rf": {
+    "type": "DSG836",
+    "params": {
+      "unique_id": null,
+      "visa_address": "USB0::0x1AB1::0x099C::DSG8M223900103::INSTR",
+      "power_ub": 5,
+      "power_lb": null
+    }
+  }
+}
