@@ -153,14 +153,13 @@ class VirtualScanner(BaseScanner):
         pass
 
 
-class VirtualCombo(BaseScanner, VirtualRF):
+class VirtualCombo(BaseScanner, BaseWavemeter):
     """
     VirtualScanner class to scanner,
     call scanner.gui() to see all configurable parameters
     
     """
     def __init__(self, unique_id):
-        super().__init__(unique_id = unique_id)
         self.x = 0
         self.y = 0
 
@@ -168,6 +167,8 @@ class VirtualCombo(BaseScanner, VirtualRF):
         self.x_ub = 5000 #mV
         self.y_lb = -5000 #mV
         self.y_ub = 5000 #mV
+
+        self.wavelength = 1
 
     
     @BaseDevice.ManagedProperty('float', monitor=True, thread_safe=True)
@@ -185,6 +186,15 @@ class VirtualCombo(BaseScanner, VirtualRF):
     @y.setter
     def y(self, value):
         self._y = int(round(value))
+
+    @BaseDevice.ManagedProperty('float', monitor=True, thread_safe=True, interval=0.01)
+    def wavelength(self):
+        return self._wavelength
+
+
+    @wavelength.setter
+    def wavelength(self, value):
+        self._wavelength = value
 
     def close(self):
         pass
