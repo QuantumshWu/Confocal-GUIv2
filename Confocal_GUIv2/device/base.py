@@ -1023,8 +1023,8 @@ class BaseLaserStabilizer(BaseDevice):
             dt = float(meta.get('interval', 0.01))
         else:
             dt = 0.01
-        return max(0.03, 3*dt)
-        # minimum 30ms
+        return max(0.1, 3*dt)
+        # minimum 100ms
                 
     
     def _run(self):
