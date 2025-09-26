@@ -1029,7 +1029,6 @@ class BaseLaserStabilizer(BaseDevice):
     
     def _run(self):
         while self.is_running:    
-            time.sleep(self.dt)
             wave_cache = self.wavemeter.wavelength #wait
             if (self.desired_wavelength is None) or (not self.on) or (wave_cache==0):
                 pass
@@ -1044,11 +1043,12 @@ class BaseLaserStabilizer(BaseDevice):
                 if np.abs(freq_diff)>self.freq_deadzone:
                     self._stabilizer_core(freq_diff)
 
-            if self._evt_request.is_set():
-                self._evt_ack.set()          # ready_to_go
-                self._evt_init.wait()        # wait until caller sets on/wavelength
-                self._evt_init.clear()
-                self._evt_request.clear()
+            # Wait up to dt for an incoming request; returns early if the event is set
+            if self._evt_request.wait(self.dt):
+                self._evt_ack.set()          # Signal readiness: control loop paused and ready to apply settings
+                self._evt_init.wait()        # Block until caller initializes (sets 'on' and 'wavelength')
+                self._evt_init.clear()       # Clear init event after it has been handled
+                self._evt_request.clear()    # Clear request event to complete the handshake
 
     @BaseDevice.ManagedProperty('func', thread_safe=True)
     def wait_to_wavelength(self, wavelength):

@@ -60,29 +60,22 @@ class DLCpro(BaseLaser):
 
 class LaserStabilizerDLCpro(BaseLaserStabilizer):
     """
-    core logic for stabilizer,
-    
-    .run() will read wavemeter and change laser piezo
-    .is_ready=True when wavelength_desired = wavelength_actual
-    .wavelength is the wavelength desired
-    .ratio = -0.85GHz/V defines the ratio for feedback
+    core logic for stabilizer
     """
     
     def __init__(self, unique_id, wavemeter_handle:BaseDevice, laser_handle:BaseDevice, 
         wavelength_lb=None, wavelength_ub=None, freq_thre=0.015, freq_deadzone=0.005):
         super().__init__(unique_id=unique_id, wavemeter_handle=wavemeter_handle, laser_handle=laser_handle,
             wavelength_lb=wavelength_lb, wavelength_ub=wavelength_ub, freq_thre=freq_thre, freq_deadzone=freq_deadzone)
-        self.ratio = 0.56 # +1V piezo -> +0.56GHz freq
         self.v_mid = 0.5*(self.laser.piezo_ub + self.laser.piezo_lb)
         self.v_min = self.laser.piezo_lb + 0.01*(self.laser.piezo_ub - self.laser.piezo_lb)
         self.v_max = self.laser.piezo_lb + 0.99*(self.laser.piezo_ub - self.laser.piezo_lb)
-        self.P = 0.8 #scaling factor of PID control
-        # leaves about 10% extra space
+        self.P = 1/0.56 # +1V piezo -> +0.56GHz freq, scaling factor of PID control
         self.v_step = 1 # maximum v change during single step, less than inf to prevent mode hop
 
         
     def _stabilizer_core(self, freq_diff):
-        v_diff = np.clip(self.P*freq_diff/self.ratio, -self.v_step, self.v_step) # limit range of v_diff
+        v_diff = np.clip(self.P*freq_diff, -self.v_step, self.v_step) # limit range of v_diff
         v_0 = self.laser.piezo
         if (v_0+v_diff)<self.v_min:
             self.laser.piezo = self.v_min

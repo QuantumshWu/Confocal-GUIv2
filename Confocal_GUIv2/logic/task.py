@@ -25,8 +25,9 @@ def mode_search_task(freq_array=np.arange(976.95-1, 976.95+1e-4, 1e-4),
     wavelength=737.11935, ple_span=0.003, ple_step=0.0001, ple_exposure=0.5,
     center=[0,0], pl_span=14, pl_step=2, pl_exposure=0.5,
     addr='mode_search_'+time.strftime("%Y-%m-%d", time.localtime()).replace('-', '_')+'/', 
-    pts_save=2000):
-
+    pts_save=2000, pts_overlap=200):
+    if pts_overlap>=pts_save:
+        pts_overlap = int(round(pts_save/10))
     n = int(np.ceil(len(freq_array)/pts_save))
     laser_stabilizer = get_devices('laser_stabilizer')
     scanner = get_devices('scanner')
@@ -55,10 +56,12 @@ def mode_search_task(freq_array=np.arange(976.95-1, 976.95+1e-4, 1e-4),
         center = [x, y]
         scanner.x = center[0]
         scanner.y = center[1]
-        if i==(n-1):
-            x_array = freq_array[i*pts_save:]
-        else:
+        if i==0:
             x_array = freq_array[i*pts_save:(i+1)*pts_save]
+        elif i==(n-1):
+            x_array = freq_array[i*pts_save-pts_overlap:]
+        else:
+            x_array = freq_array[i*pts_save-pts_overlap:(i+1)*pts_save]
         spl = 299792458
         wavelength_mode = spl/(spl/wavelength - np.mean(x_array)/1e3)
         live_plot = mode(x_array=x_array, exposure=exposure, sample_num=sample_num, counter_mode=counter_mode,

@@ -642,6 +642,23 @@ def raw_plot(
     live_plot.init_figure_and_data()
     live_plot.update_figure()
     live_plot.after_plot()
+
+    class _RawPlotMeasurement:
+        def __init__(self, cls_ref):
+            self.name = cls_ref.name
+            self.unit = cls_ref.unit
+            self.info = {'unit': cls_ref.unit, 'class_name': cls_ref.__name__}
+            self.points_done = len(data_x)
+            self.repeat_cur = 1
+        def stop(self): pass
+        def is_done(self): return True
+
+    meas = _RawPlotMeasurement(cls)
+    ctr = PlotController(measurement=meas, live_plot=live_plot,
+                         auto_save_and_close=True, qt_parent=None)
+    live_plot.controller = ctr
+    ctr._finalize_plot()
+
     return live_plot
 
 @measurement_gui_meta(
