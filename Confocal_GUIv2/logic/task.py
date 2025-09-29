@@ -66,7 +66,7 @@ def mode_search_task(freq_array=np.arange(976.95-1, 976.95+1e-4, 1e-4),
         spl = 299792458
         wavelength_mode = spl/(spl/wavelength - np.mean(x_array)/1e3)
         live_plot = mode(x_array=x_array, exposure=exposure, sample_num=sample_num, counter_mode=counter_mode,
-            power=power, ref_freq=ref_freq, h10_ratio=h10_ratio, beta=beta, exposure_h1=exposure_h1, t_cali=t_cali
+            power=power, ref_freq=ref_freq, h10_ratio=h10_ratio, beta=beta, exposure_h1=exposure_h1, t_cali=t_cali,
             wavelength=wavelength_mode,
             is_adaptive=is_adaptive)
         live_plot.data_figure.save(addr)
