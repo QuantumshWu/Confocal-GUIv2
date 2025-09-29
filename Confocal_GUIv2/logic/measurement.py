@@ -1040,7 +1040,7 @@ class LiveMeasurement(BaseMeasurement):
     update_mode_valid=['replace', 'create'],
 )
 class ModeMeasurement(BaseMeasurement):
-    def __init__(self, config:BaseMeasurementConfig, power, wavelength, is_adaptive, ref_freq, h10_ratio, beta, exposure_h1):
+    def __init__(self, config:BaseMeasurementConfig, power, wavelength, is_adaptive, ref_freq, h10_ratio, beta, exposure_h1, t_cali):
         super().__init__(config=config)
         self.power = power
         self.wavelength = wavelength
@@ -1049,6 +1049,8 @@ class ModeMeasurement(BaseMeasurement):
         self.h10_ratio = h10_ratio
         self.beta = beta
         self.exposure_h1 = exposure_h1
+        self.t_cali = t_cali
+        self.t_last_cali = time.time()
         self.h0_single_read = None
         xlabel = f'{self.xlabel} ({self.unit})'
         if self.counter_mode=='apd_sample':
@@ -1091,8 +1093,9 @@ class ModeMeasurement(BaseMeasurement):
         self.rf.on = False
         self.laser_stabilizer.on = False
     def get_data_y(self):
-        if (self.is_adaptive is True) and (self.h0_single_read is None):
+        if (self.is_adaptive is True) and ((self.h0_single_read is None) or (time.time() - self.t_last_cali)>self.t_cali):
             self._cali_h0()
+            self.t_last_cali = time.time()
 
         counts = self.counter.read_counts(exposure=self.exposure, sample_num=self.sample_num, parent=self)[0]
         t0 = time.time()
@@ -1132,6 +1135,8 @@ class ModeMeasurement(BaseMeasurement):
         # h1/h0 ratio, and beta the type II error of H1
         exposure_h1 = 1,
         # params for sequential probability ratio test (SPRT)
+        t_cali = 100,
+        # how often to recali the base counts
         # other params for measurement if any
         update_time=1, fig=None, relim_mode='tight',
         # live_plot params 

@@ -22,6 +22,7 @@ def find_bright_sivs_task(wavelength_array, x_array, y_array, bound_pts, exposur
 def mode_search_task(freq_array=np.arange(976.95-1, 976.95+1e-4, 1e-4), 
     exposure=0.01, sample_num=1000, counter_mode='apd_sample', is_adaptive=True, 
     power=-20, ref_freq=500, h10_ratio=1.5, beta=0.05, exposure_h1=5,
+    t_cali=100,
     wavelength=737.11935, ple_span=0.003, ple_step=0.0001, ple_exposure=0.5,
     center=[0,0], pl_span=14, pl_step=2, pl_exposure=0.5,
     addr='mode_search_'+time.strftime("%Y-%m-%d", time.localtime()).replace('-', '_')+'/', 
@@ -65,7 +66,7 @@ def mode_search_task(freq_array=np.arange(976.95-1, 976.95+1e-4, 1e-4),
         spl = 299792458
         wavelength_mode = spl/(spl/wavelength - np.mean(x_array)/1e3)
         live_plot = mode(x_array=x_array, exposure=exposure, sample_num=sample_num, counter_mode=counter_mode,
-            power=power, ref_freq=ref_freq, h10_ratio=h10_ratio, beta=beta, exposure_h1=exposure_h1,
+            power=power, ref_freq=ref_freq, h10_ratio=h10_ratio, beta=beta, exposure_h1=exposure_h1, t_cali=t_cali
             wavelength=wavelength_mode,
             is_adaptive=is_adaptive)
         live_plot.data_figure.save(addr)
