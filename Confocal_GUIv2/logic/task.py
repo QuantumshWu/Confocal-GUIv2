@@ -74,7 +74,12 @@ def mode_search_task(freq_array=np.arange(976.95-1, 976.95+1e-4, 1e-4),
 
 
 def test_task():
+    live_plot = ple(x_array = np.linspace(737.12, 737.13, 101))
+    live_plot.data_figure.lorent()
+    time.sleep(1)
     live_plot = pl()
-    live_plot = live()
+    live_plot.data_figure.center()
+    time.sleep(1)
+    live_plot = live(is_finite=True)
     live_plot = ple(x_array = np.linspace(737.12, 737.13, 101))
 

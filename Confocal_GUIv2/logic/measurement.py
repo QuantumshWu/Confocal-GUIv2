@@ -1084,8 +1084,7 @@ class ModeMeasurement(BaseMeasurement):
     def to_initial_state(self):
         self.rf.on = True
         self.rf.power = self.power
-        self.laser_stabilizer.on = True
-        self.laser_stabilizer.wavelength = self.wavelength
+        self.laser_stabilizer.wait_to_wavelength(self.wavelength)
     def device_to_state(self, value):
         self.rf.frequency = value[0]*1e6
     def to_final_state(self):
