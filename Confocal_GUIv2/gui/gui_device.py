@@ -662,6 +662,7 @@ class DeviceManagerGUI(QWidget):
 
         combo = QComboBox(); combo.addItems(self.device_types)
         if dtype: combo.setCurrentText(dtype)
+
         combo.setFixedSize(200, 30); h.addWidget(combo)
         placeholder_text = 'e.g., piezo_lb:50 or laser_handle:$device:laser'
         te_params = DynamicPlainTextEdit(text = params_text, placeholder_text=placeholder_text)
@@ -683,6 +684,30 @@ class DeviceManagerGUI(QWidget):
                 w.setParent(None)
 
     # ----- state tracking -----
+
+    def _device_types_now(self):
+        """Build fresh device_types from the live lookup dict."""
+        from Confocal_GUIv2.device import BaseDevice, RemoteDevice
+        return sorted([
+            name for name, cls in self.lookup.items()
+            if inspect.isclass(cls) and (issubclass(cls, BaseDevice) or issubclass(cls, RemoteDevice))
+        ])
+
+    def _refresh_all_type_combos(self):
+        """Rebuild all 'Type' comboboxes; keep current text; mark unknown in red."""
+        self.device_types = self._device_types_now()
+        for i in range(self.row_layout.count()):
+            row = self.row_layout.itemAt(i).widget()
+            if not hasattr(row, "widgets"):  # safety
+                continue
+            _cb, _le_name, combo, _te_params = row.widgets
+            cur = combo.currentText().strip()
+
+            combo.blockSignals(True)
+            combo.clear()
+            combo.addItems(self.device_types)
+            combo.setCurrentText(cur)  # preserve what user/config had
+            combo.blockSignals(False)
 
     def _get_gui_state(self):
         """Robust, low-strictness snapshot of current UI config.
@@ -869,6 +894,7 @@ class DeviceManagerGUI(QWidget):
         super().hideEvent(event)
 
     def showEvent(self, event):
+        self._refresh_all_type_combos()
         if not self._poll_timer.isActive():
             self._poll_timer.start()
 
