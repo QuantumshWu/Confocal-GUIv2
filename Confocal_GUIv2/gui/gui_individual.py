@@ -403,7 +403,6 @@ class BaseLivePlotGUI(QWidget):
             self.combo_counter_mode.addItems(counter_override_device.counter_mode_valid)
 
     def read_params_base(self):
-
         repeat = int(self.spin_repeat.value())
         update_time = self.spin_update_time.value()
         relim_mode = self.combo_relim.currentText()
@@ -583,49 +582,54 @@ class BaseLivePlotGUI(QWidget):
 
 
     def estimate_run_time(self):
-
-        if self.stateui_manager.runstate in (self.stateui_manager.RunState.RUNNING,):
-            points_total = self.live_plot.controller.measurement.points_total
-            points_done = self.live_plot.controller.measurement.points_done
-            if points_done<=1:
-                return
-            ratio = points_done/points_total
-            time_use = time.time() - self.time_start
-            if self.live_plot.controller.measurement.counter_mode == 'apd_sample':
-                self.edit_display_time.setText(
-                (
-                    f'Current plot finishes in '
-                    f'{time_use:.1f}s / {(time_use/ratio):.1f}s, '
-                    f'{(ratio*100):.1f}%, '
-                    f'{time_use/points_done:.3f}s/point'
-                ))
+        try:
+            if self.stateui_manager.runstate in (self.stateui_manager.RunState.RUNNING,):
+                points_total = self.live_plot.controller.measurement.points_total
+                points_done = self.live_plot.controller.measurement.points_done
+                if points_done<=1:
+                    return
+                ratio = points_done/points_total
+                time_use = time.time() - self.time_start
+                if self.live_plot.controller.measurement.counter_mode == 'apd_sample':
+                    self.edit_display_time.setText(
+                    (
+                        f'Current plot finishes in '
+                        f'{time_use:.1f}s / {(time_use/ratio):.1f}s, '
+                        f'{(ratio*100):.1f}%, '
+                        f'{time_use/points_done:.3f}s/point'
+                    ))
+                else:
+                    self.overhead_time = time_use/points_done - self.live_plot.controller.measurement.exposure
+                    self.edit_display_time.setText(
+                    (
+                        f'Current plot finishes in '
+                        f'{time_use:.1f}s / {(time_use/ratio):.1f}s, '
+                        f'{(ratio*100):.1f}%, '
+                        f'{(self.overhead_time + self.live_plot.controller.measurement.exposure):.3f}s/point'
+                    ))
             else:
-                self.overhead_time = time_use/points_done - self.live_plot.controller.measurement.exposure
-                self.edit_display_time.setText(
-                (
-                    f'Current plot finishes in '
-                    f'{time_use:.1f}s / {(time_use/ratio):.1f}s, '
-                    f'{(ratio*100):.1f}%, '
-                    f'{(self.overhead_time + self.live_plot.controller.measurement.exposure):.3f}s/point'
-                ))
-        else:
-            if not self.all_inputs_valid(show_message=False):
-                return
-            params_dict = self.read_params()
-            if params_dict is None:
-                return
-            if params_dict['counter_mode']=='apd_sample':
-                self.edit_display_time.setText(
-                (
-                    f'New plot finishes in unknown time'
-                ))
-            else:
-                time_est = len(params_dict['data_x_generated'])*(params_dict['exposure']+self.overhead_time)*params_dict['repeat']
-                # considering the overhead
-                self.edit_display_time.setText(
-                (
-                    f'New plot finishes in {time_est:.1f}s'
-                ))
+                if not self.all_inputs_valid(show_message=False):
+                    return
+                params_dict = self.read_params()
+                if params_dict is None:
+                    return
+                if params_dict['counter_mode']=='apd_sample':
+                    self.edit_display_time.setText(
+                    (
+                        f'New plot finishes in unknown time'
+                    ))
+                else:
+                    time_est = len(params_dict['data_x_generated'])*(params_dict['exposure']+self.overhead_time)*params_dict['repeat']
+                    # considering the overhead
+                    self.edit_display_time.setText(
+                    (
+                        f'New plot finishes in {time_est:.1f}s'
+                    ))
+        except Exception:
+            self.edit_display_time.setText(
+            (
+                f'Error in input parameters'
+            ))
 
 
     def on_set_x_toggled(self):
@@ -1069,6 +1073,7 @@ class LivePlot1DGUI(BaseLivePlotGUI):
         'data_x_generated':data_x_generated}
 
         return {**params_dict, **params_dict_base}
+
 
     def on_step_changed(self):
         unit = self.cls_name.unit
