@@ -1587,6 +1587,9 @@ class BasePulse(BaseDevice):
 class BaseCounterNI(BaseCounter):
     # Basecounter class for NI-DAQ board/card
     # defines how to setup counter tasks and analogin tasks
+    # for X series NI 632x/634x/635x/636x/637x/638x/639x Devices only
+    # otherwise can not configure pause trigger and sample clock for counter
+    # at the same time
 
     def __init__(self, port_config):
         super().__init__()
@@ -1823,6 +1826,443 @@ class BaseCounterNI(BaseCounter):
             self.task_counter_ctr_ref.in_stream.relative_to = self.nidaqmx.constants.ReadRelativeTo.FIRST_SAMPLE
             # relative to beginning of buffer, change offset instead
             self.tasks_to_close += [self.task_counter_ctr, self.task_counter_ctr_ref]
+
+        elif self.counter_mode == 'analog':
+            self.close_old_tasks()
+
+            self.task_counter_ai = self.nidaqmx.Task()
+            self.task_counter_ai.ai_channels.add_ai_voltage_chan(self.analog_signal)
+            self.task_counter_ai.ai_channels.add_ai_voltage_chan(self.analog_gate)
+            self.task_counter_ai.ai_channels.add_ai_voltage_chan(self.analog_gate_ref)
+            self.task_counter_ai.in_stream.relative_to = self.nidaqmx.constants.ReadRelativeTo.FIRST_SAMPLE
+            # for analog counter
+            self.tasks_to_close += [self.task_counter_ai,]
+
+
+    @BaseDevice.ManagedProperty('func', thread_safe=True)
+    def read_counts(self, exposure=0.1, sample_num=1000, parent=None):
+        if self.counter_mode == 'apd_sample':
+            if (sample_num+1)!=self.sample_num:
+                self.set_counter()
+                self.set_timing(exposure, sample_num)
+        else:
+            if exposure!=self.exposure:
+                self.set_counter()
+                self.set_timing(exposure, sample_num)
+
+        if self.counter_mode == 'apd':
+            total_sample = self.task_counter_ctr.in_stream.total_samp_per_chan_acquired
+            sample_remain = self.sample_num
+            data_main_0 = None
+            data_ref_0 = None
+            current_sample = total_sample
+            while sample_remain>0:
+                self.task_counter_ctr.in_stream.offset = current_sample
+                self.task_counter_ctr_ref.in_stream.offset = current_sample
+                # update read pos accrodingly to keep reading most recent self.sample_num samples
+                read_sample_num = np.min([self.sample_num_single, sample_remain])
+                try:
+                    self.reader_ctr.read_many_sample_uint32(self.counts_main_array[:read_sample_num]
+                        , number_of_samples_per_channel = read_sample_num, timeout=5*self.exposure_single
+                    )
+                    self.reader_ctr_ref.read_many_sample_uint32(self.counts_ref_array[:read_sample_num]
+                        , number_of_samples_per_channel = read_sample_num, timeout=5*self.exposure_single
+                    )
+                except Exception as e:
+                    log_error(e)
+                    return None
+                if self.is_cancel:
+                    raise DeviceCanceled()
+
+                if (data_main_0 is None) and (data_ref_0 is None):
+                    data_main_0 = float(self.counts_main_array[0])
+                    data_ref_0 = float(self.counts_ref_array[0])
+                # get the first counts when sample_num larger than buffer_size and need loop
+                sample_remain -= read_sample_num
+                current_sample += read_sample_num
+            data_main = float(self.counts_main_array[read_sample_num-1] - data_main_0)
+            data_ref = float(self.counts_ref_array[read_sample_num-1] - data_ref_0)
+
+        if self.counter_mode == 'apd_sample':
+            total_sample = self.task_counter_ctr.in_stream.total_samp_per_chan_acquired
+            sample_remain = self.sample_num
+            data_main_0 = None
+            data_ref_0 = None
+            current_sample = total_sample
+            while sample_remain>0:
+                self.task_counter_ctr.in_stream.offset = current_sample
+                self.task_counter_ctr_ref.in_stream.offset = current_sample
+                # update read pos accrodingly to keep reading most recent self.sample_num samples
+                read_sample_num = np.min([self.sample_num_single, sample_remain])
+
+                while True:
+                    avail = self.task_counter_ctr.in_stream.avail_samp_per_chan
+                    if avail<read_sample_num:
+                        self.time_sleep(self.apd_sample_check_interval)
+                    else:
+                        break
+
+                try:
+                    self.reader_ctr.read_many_sample_uint32(self.counts_main_array[:read_sample_num]
+                        , number_of_samples_per_channel = read_sample_num, timeout=5*self.exposure_single
+                    )
+                    self.reader_ctr_ref.read_many_sample_uint32(self.counts_ref_array[:read_sample_num]
+                        , number_of_samples_per_channel = read_sample_num, timeout=5*self.exposure_single
+                    )
+                except Exception as e:
+                    log_error(e)
+                    return None
+
+                if self.is_cancel:
+                    raise DeviceCanceled()
+
+                if (data_main_0 is None) and (data_ref_0 is None):
+                    data_main_0 = float(self.counts_main_array[0])
+                    data_ref_0 = float(self.counts_ref_array[0])
+                # get the first counts when sample_num larger than buffer_size and need loop
+                sample_remain -= read_sample_num
+                current_sample += read_sample_num
+
+            data_main = float(self.counts_main_array[read_sample_num-1] - data_main_0)
+            data_ref = float(self.counts_ref_array[read_sample_num-1] - data_ref_0)
+
+        elif self.counter_mode == 'analog':
+            total_sample = self.task_counter_ai.in_stream.total_samp_per_chan_acquired
+            sample_remain = self.sample_num
+            data_main = 0
+            data_ref = 0
+            current_sample = total_sample
+            while sample_remain>0:
+                self.task_counter_ai.in_stream.offset = current_sample
+                # update read pos accrodingly to keep reading most recent self.sample_num samples
+                read_sample_num = np.min([self.sample_num_single, sample_remain])
+
+                if read_sample_num==self.sample_num_single:
+                    read_array = self.counts_array
+                else:
+                    read_array = self.counts_array_remain
+
+                try:
+                    self.reader_analog.read_many_sample(read_array,
+                        number_of_samples_per_channel = read_sample_num, timeout=5*self.exposure_single
+                    )
+                except Exception as e:
+                    log_error(e)
+                    return None
+
+                if self.is_cancel:
+                    raise DeviceCanceled()
+
+                data = read_array[0, :read_sample_num]
+                gate1 = read_array[1, :read_sample_num]
+                gate2 = read_array[2, :read_sample_num]
+
+                gate1_index = np.where(gate1 > self.analog_threshold)[0]
+                gate2_index = np.where(gate2 > self.analog_threshold)[0]
+
+                data_main += float(np.sum(data[gate1_index]))
+                data_ref += float(np.sum(data[gate2_index]))
+
+                sample_remain -= read_sample_num
+                current_sample += read_sample_num
+
+
+            data_main = data_main/self.sample_num
+            data_ref = data_ref/self.sample_num
+
+
+        if self.data_mode == 'single':
+            return [data_main,]
+            
+        elif self.data_mode == 'ref_div':
+            if data_main==0 or data_ref==0:
+                return [0,]
+            else:
+                return [data_main/data_ref,]
+
+        elif self.data_mode == 'ref_sub':
+            return [(data_main - data_ref),]
+
+        elif self.data_mode == 'dual':
+            return [data_main, data_ref]
+
+
+class BaseCounterNIM(BaseCounter):
+    # Basecounter class for NI-DAQ board/card
+    # defines how to setup counter tasks and analogin tasks
+    # for M series
+
+    def __init__(self, port_config):
+        super().__init__()
+
+        import nidaqmx
+        from nidaqmx.constants import AcquisitionType
+        from nidaqmx.constants import TerminalConfiguration
+        from nidaqmx.stream_readers import AnalogMultiChannelReader
+
+        defaults = {
+            'dev_num':         'Dev2',
+            'apd_signal':      'PFI3',
+            'apd_gate':        'PFI4',
+            'apd_gate_ref':    'PFI1',
+            'apd_clock':       'PFI12',
+            'analog_signal':   'ai0',
+            'analog_gate':     'ai1',
+            'analog_gate_ref': 'ai2',
+        }
+
+        cfg = {**defaults, **(port_config or {})}
+        # if some in port_config will then override
+
+        def last(seg: str) -> str:
+            s = str(seg).strip().strip('/')
+            return s.split('/')[-1] if s else ''
+        dev = last(cfg['dev_num'])
+        self.dev_num = f'/{dev}/'
+
+        for key in (set(defaults) - {'dev_num'}):
+            tok = last(cfg[key])
+            setattr(self, key, f'{self.dev_num}{tok}')
+
+        self.nidaqmx = nidaqmx
+        self.exposure = 0.1
+        self.sample_num_single_default = 1000
+        self.sample_num = 1000
+        self.exposure_single = 0.2 # defines the sample number counter reads from hardware every time
+        self.exposure_single_lb = 0.1
+        self.exposure_single_ub = 0.5
+        self.analog_threshold = 2.7 # 2.7V as the threshold to identify gate signal
+        self.apd_sample_check_interval = 0.005 # maximum 5ms overhead
+        self.tasks_to_close = [] # tasks need to be closed after swicthing counter mode 
+        self.base_counter_mode_valid = ['apd', 'analog', 'apd_sample']
+        self.base_data_mode_valid = ['single', 'ref_div', 'ref_sub', 'dual']
+        # base_xxx_valid defines the all availabel mode for base class of BaseCounterNI
+
+        self.data_mode_valid = ['single', 'ref_div', 'ref_sub', 'dual']
+        self.counter_mode_valid = ['apd', 'analog', 'apd_sample']
+        self.counter_mode = 'apd'
+        self.data_mode = 'single'
+
+        dev = self.nidaqmx.system.System.local().devices[self.dev_num[1:-1]] # remove two /
+        print(f'Max channel rate: {dev.ai_max_single_chan_rate}, {dev.ai_max_multi_chan_rate}')
+        print(f'Support simultaneous sampling: {dev.ai_simultaneous_sampling_supported}')
+        self.analog_clock_max = dev.ai_max_multi_chan_rate/3 if not dev.ai_simultaneous_sampling_supported else dev.ai_max_multi_chan_rate
+        self.analog_clock_max = int(self.analog_clock_max//1e3)*1e3
+        print(f'Set analog clock to: {self.analog_clock_max}')
+
+    @BaseDevice.ManagedProperty('float')
+    def exposure_single(self):
+        return self._exposure_single
+
+    @exposure_single.setter
+    def exposure_single(self, value):
+        self._exposure_single = value
+
+    @property
+    def counter_mode_valid(self):
+        return self._counter_mode_valid
+
+    @counter_mode_valid.setter
+    def counter_mode_valid(self, value):
+        if not all(mode in self.base_counter_mode_valid for mode in value):
+            print(f'Can only be subset of the {self.base_counter_mode_valid}')
+        else:
+            self._counter_mode_valid = value
+
+    @property
+    def data_mode_valid(self):
+        return self._data_mode_valid
+
+    @data_mode_valid.setter
+    def data_mode_valid(self, value):
+        if not all(mode in self.base_data_mode_valid for mode in value):
+            print(f'Can only be subset of the {self.base_data_mode_valid}')
+        else:
+            self._data_mode_valid = value
+
+    @BaseDevice.ManagedProperty('str')
+    def data_mode(self):
+        return self._data_mode
+
+    @BaseDevice.ManagedProperty('str')
+    def counter_mode(self):
+        return self._counter_mode
+
+    @data_mode.setter
+    def data_mode(self, value):
+        self._data_mode = value
+
+    @counter_mode.setter
+    def counter_mode(self, value):
+        if value != getattr(self, '_counter_mode', None):
+            self._counter_mode = value # before call set_counter
+            self.set_counter()
+            self.set_timing(self.exposure, self.sample_num)
+
+    @property
+    def data_len(self):
+        return 2 if self.data_mode=='dual' else 1
+    # the return data type 
+
+
+    def set_timing(self, exposure, sample_num):
+        if self.counter_mode == 'apd':
+            self.clock = 1e4 
+            # sampling rate for edge counting, defines when transfer counts from DAQ to PC, should be not too large to accomdate long exposure
+            self.buffer_size = int(1e6)
+            self.task_counter_clock = self.nidaqmx.Task()
+            self.task_counter_clock.co_channels.add_co_pulse_chan_freq(counter=self.dev_num+'ctr4', freq=self.clock, duty_cycle=0.5)
+            # ctr4 clock for buffered edge counting ctr0 and ctr1
+            self.task_counter_clock.timing.cfg_implicit_timing(sample_mode=self.nidaqmx.constants.AcquisitionType.CONTINUOUS)
+
+            self.tasks_to_close += [self.task_counter_clock,]
+
+            self.sample_num = int(round(self.clock*exposure))+1
+            self.sample_num_single = min(self.sample_num, int(round(self.clock*self.exposure_single)))
+            self.task_counter_ctr.timing.cfg_samp_clk_timing(self.clock, source = self.dev_num+'Ctr4InternalOutput',
+                sample_mode=self.nidaqmx.constants.AcquisitionType.CONTINUOUS, samps_per_chan=self.buffer_size
+            )
+            self.task_counter_ctr_ref.timing.cfg_samp_clk_timing(self.clock, source = self.dev_num+'Ctr4InternalOutput',
+                sample_mode=self.nidaqmx.constants.AcquisitionType.CONTINUOUS, samps_per_chan=self.buffer_size
+            )
+
+            self.exposure = exposure
+            self.counts_main_array = np.zeros(self.sample_num_single, dtype=np.uint32)
+            self.counts_ref_array = np.zeros(self.sample_num_single, dtype=np.uint32)
+            self.reader_ctr = self.nidaqmx.stream_readers.CounterReader(self.task_counter_ctr.in_stream)
+            self.reader_ctr_ref = self.nidaqmx.stream_readers.CounterReader(self.task_counter_ctr_ref.in_stream)
+
+            self.task_counter_ctr.start()
+            self.task_counter_ctr_ref.start()
+            # start clock after counter tasks
+            self.task_counter_clock.start()
+
+        if self.counter_mode == 'apd_sample':
+            self.clock = 1e4 
+            # sampling rate for edge counting, defines when transfer counts from DAQ to PC, should be not too large to accomdate long exposure
+            self.buffer_size = int(1e6)
+
+            self.sample_num = sample_num + 1
+            self.sample_num_single = min(self.sample_num, self.sample_num_single_default)
+            self.task_counter_ctr.timing.cfg_samp_clk_timing(self.clock, source = self.apd_clock,
+                sample_mode=self.nidaqmx.constants.AcquisitionType.CONTINUOUS, samps_per_chan=self.buffer_size
+            )
+            self.task_counter_ctr_ref.timing.cfg_samp_clk_timing(self.clock, source = self.apd_clock,
+                sample_mode=self.nidaqmx.constants.AcquisitionType.CONTINUOUS, samps_per_chan=self.buffer_size
+            )
+
+            self.exposure = exposure
+            self.counts_main_array = np.zeros(self.sample_num_single, dtype=np.uint32)
+            self.counts_ref_array = np.zeros(self.sample_num_single, dtype=np.uint32)
+            self.reader_ctr = self.nidaqmx.stream_readers.CounterReader(self.task_counter_ctr.in_stream)
+            self.reader_ctr_ref = self.nidaqmx.stream_readers.CounterReader(self.task_counter_ctr_ref.in_stream)
+
+            # configure arm trigger to start both tasks at same time
+            for t in (self.task_counter_ctr, self.task_counter_ctr_ref):
+                trig = t.triggers.arm_start_trigger
+                trig.trig_type = self.nidaqmx.constants.TriggerType.DIGITAL_EDGE
+                trig.dig_edge_src = self.dev_num + 'Ctr2InternalOutput'
+                trig.dig_edge_edge = self.nidaqmx.constants.Edge.RISING
+                t.control(self.nidaqmx.constants.TaskMode.TASK_COMMIT)
+
+            self.task_sync_pulse = self.nidaqmx.Task()
+            self.task_sync_pulse.co_channels.add_co_pulse_chan_time(
+                counter=self.dev_num + 'ctr2', low_time=5e-6, high_time=5e-6
+            )
+            self.task_sync_pulse.timing.cfg_implicit_timing(
+                sample_mode=self.nidaqmx.constants.AcquisitionType.FINITE, samps_per_chan=1
+            )
+            self.task_sync_pulse.control(self.nidaqmx.constants.TaskMode.TASK_COMMIT)
+            self.tasks_to_close += [self.task_sync_pulse]
+
+            self.task_counter_pause.start()
+            self.task_counter_pause_ref.start()
+            self.task_counter_ctr.start()
+            self.task_counter_ctr_ref.start()
+            self.task_sync_pulse.start()
+
+        elif self.counter_mode == 'analog':
+            self.clock = self.analog_clock_max 
+            # sampling rate for analog input, should be fast enough to capture gate signal for postprocessing
+            self.sample_num = int(round(self.clock*exposure))+1
+            self.sample_num_single = min(self.sample_num, int(round(self.clock*self.exposure_single)))
+            self.buffer_size = int(1e6)
+            self.task_counter_ai.timing.cfg_samp_clk_timing(self.clock, sample_mode=self.nidaqmx.constants.AcquisitionType.CONTINUOUS
+                , samps_per_chan=self.buffer_size)
+            self.exposure = exposure
+            self.counts_array = np.zeros((3, self.sample_num_single), dtype=np.float64)
+            self.counts_array_remain = np.zeros((3, self.sample_num%self.sample_num_single), dtype=np.float64)
+            self.reader_analog = self.nidaqmx.stream_readers.AnalogMultiChannelReader(self.task_counter_ai.in_stream)
+
+            self.task_counter_ai.start()
+
+
+    def close_old_tasks(self):
+        for task in self.tasks_to_close:
+            task.stop()
+            task.close()
+        self.tasks_to_close = []
+
+    def close(self):
+        self.close_old_tasks()
+
+    def set_counter(self):
+        if self.counter_mode in ('apd', 'apd_sample'):
+            self.close_old_tasks()
+
+            self.task_counter_ctr = self.nidaqmx.Task()
+            self.task_counter_ctr.ci_channels.add_ci_count_edges_chan(self.dev_num+'ctr0')
+            self.task_counter_ctr.ci_channels.all.ci_count_edges_term = self.dev_num+'Ctr2InternalOutput'
+
+            self.task_counter_ctr_ref = self.nidaqmx.Task()
+            self.task_counter_ctr_ref.ci_channels.add_ci_count_edges_chan(self.dev_num+'ctr1')
+            self.task_counter_ctr_ref.ci_channels.all.ci_count_edges_term = self.dev_num+'Ctr3InternalOutput'
+
+            self.task_counter_ctr.in_stream.relative_to = self.nidaqmx.constants.ReadRelativeTo.FIRST_SAMPLE
+            self.task_counter_ctr_ref.in_stream.relative_to = self.nidaqmx.constants.ReadRelativeTo.FIRST_SAMPLE
+            # relative to beginning of buffer, change offset instead
+
+
+            self.task_counter_pause = self.nidaqmx.Task()
+            self.task_counter_pause.co_channels.add_co_pulse_chan_time(
+                counter=self.dev_num+'ctr2', low_time=10e-9, high_time=10e-9
+            )
+            self.task_counter_pause.timing.cfg_implicit_timing(
+                sample_mode=self.nidaqmx.constants.AcquisitionType.FINITE, samps_per_chan=1
+            )
+            # retrigger on every APD edge
+            start = self.task_counter_pause.triggers.start_trigger
+            start.trig_type = self.nidaqmx.constants.TriggerType.DIGITAL_EDGE
+            start.dig_edge_src = self.apd_signal
+            start.dig_edge_edge = self.nidaqmx.constants.Edge.RISING
+            start.retriggerable = True
+            # pause by main gate
+            p = self.task_counter_pause.triggers.pause_trigger
+            p.trig_type = self.nidaqmx.constants.TriggerType.DIGITAL_LEVEL
+            p.dig_lvl_src = self.apd_gate
+            p.dig_lvl_when = self.nidaqmx.constants.Level.LOW
+
+
+            self.task_counter_pause_ref = self.nidaqmx.Task()
+            self.task_counter_pause_ref.co_channels.add_co_pulse_chan_time(
+                counter=self.dev_num+'ctr3', low_time=10e-9, high_time=10e-9
+            )
+            self.task_counter_pause_ref.timing.cfg_implicit_timing(
+                sample_mode=self.nidaqmx.constants.AcquisitionType.FINITE, samps_per_chan=1
+            )
+            # retrigger on every APD edge
+            start = self.task_counter_pause_ref.triggers.start_trigger
+            start.trig_type = self.nidaqmx.constants.TriggerType.DIGITAL_EDGE
+            start.dig_edge_src = self.apd_signal
+            start.dig_edge_edge = self.nidaqmx.constants.Edge.RISING
+            start.retriggerable = True
+            # pause by main gate
+            p = self.task_counter_pause_ref.triggers.pause_trigger
+            p.trig_type = self.nidaqmx.constants.TriggerType.DIGITAL_LEVEL
+            p.dig_lvl_src = self.apd_gate_ref
+            p.dig_lvl_when = self.nidaqmx.constants.Level.LOW
+
+            self.tasks_to_close += [self.task_counter_ctr, self.task_counter_ctr_ref, self.task_counter_pause, self.task_counter_pause_ref]
 
         elif self.counter_mode == 'analog':
             self.close_old_tasks()
