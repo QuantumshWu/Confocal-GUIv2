@@ -2132,6 +2132,8 @@ class BaseCounterNIM(BaseCounter):
             self.reader_ctr = self.nidaqmx.stream_readers.CounterReader(self.task_counter_ctr.in_stream)
             self.reader_ctr_ref = self.nidaqmx.stream_readers.CounterReader(self.task_counter_ctr_ref.in_stream)
 
+            self.task_counter_pause.start()
+            self.task_counter_pause_ref.start()
             self.task_counter_ctr.start()
             self.task_counter_ctr_ref.start()
             # start clock after counter tasks
@@ -2175,8 +2177,6 @@ class BaseCounterNIM(BaseCounter):
             self.task_sync_pulse.control(self.nidaqmx.constants.TaskMode.TASK_COMMIT)
             self.tasks_to_close += [self.task_sync_pulse]
 
-            self.task_counter_pause.start()
-            self.task_counter_pause_ref.start()
             self.task_counter_ctr.start()
             self.task_counter_ctr_ref.start()
             self.task_sync_pulse.start()
