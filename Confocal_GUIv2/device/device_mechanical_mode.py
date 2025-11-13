@@ -1,6 +1,89 @@
 from .base import *
 
 
+class TLB6700(BaseLaser):
+    """
+    laser = TLB6700()
+    
+    >>> laser1.wavelength
+    >>> 737.11
+    >>> laser1.wavelength = 737.12
+    >>> 737.12
+    # return or set wavelngth
+    
+    >>> laser1.piezo
+    >>> 0
+    >>> laser1.piezo = 10
+    >>> 10
+    # return or set piezo voltage
+        
+    """
+    
+    def __tlb_open(self):
+        self.tlb.OpenDevices(self.ProductID, True)
+
+    def __tlb_close(self):
+        self.tlb.CloseDevices()
+
+    def __tlb_query(self, msg):
+        self.answer.Clear()
+        self.tlb.Query(self.DeviceKey, msg, self.answer)
+        return self.answer.ToString()    
+    
+    def __init__(self, unique_id, piezo_lb=0, piezo_ub=100):
+
+        import clr
+        from System.Text import StringBuilder
+        from System import Int32
+        from System.Reflection import Assembly
+        import Newport
+
+        clr.AddReference(r'mscorlib')
+        sys.path.append('C:\\Program Files\\New Focus\\New Focus Tunable Laser Application\\')
+        # location of new focus laser driver file
+        clr.AddReference('UsbDllWrap')
+
+        self.tlb = Newport.USBComm.USB()
+        self.answer = StringBuilder(64)
+
+        self.ProductID = 4106
+        self.DeviceKey = '6700 SN37711'
+        # your own devicekey/ID, check this using newport software
+
+        self.connect()
+        
+        self.piezo_lb = piezo_lb
+        self.piezo_ub = piezo_ub
+        
+    def connect(self):
+        self.__tlb_open()
+        
+    def close(self):
+        self.__tlb_close()
+        
+    @BaseDevice.ManagedProperty('float', thread_safe=True)
+    def wavelength(self):
+        self._wavelength = float(self.__tlb_query('SOURCE:WAVELENGTH?'))
+        return self._wavelength
+    
+    @wavelength.setter
+    def wavelength(self, value):
+        self._wavelength = value
+        self.__tlb_query(f'SOURce:WAVElength {self._wavelength:.2f}')
+        self.__tlb_query('OUTPut:TRACK 1')
+        
+    @BaseDevice.ManagedProperty('float', thread_safe=True)
+    def piezo(self):
+        self._piezo = float(self.__tlb_query('SOURce:VOLTage:PIEZO?'))
+        return self._piezo
+    
+    @piezo.setter
+    def piezo(self, value):
+        self._piezo = value
+        self.__tlb_query(f'SOURce:VOLTage:PIEZO {self._piezo:.2f}')
+
+
+
 class DLCpro(BaseLaser):
     """
     laser = DLCpro()
