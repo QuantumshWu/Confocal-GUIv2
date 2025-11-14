@@ -92,6 +92,7 @@ class LaserStabilizerTLB(BaseLaserStabilizer):
         self.v_max = self.laser.piezo_lb + 0.99*(self.laser.piezo_ub - self.laser.piezo_lb)
         self.P = -1/0.766 # +1V piezo -> -0.766GHz freq, scaling factor of PID control
         self.v_step = 1 # maximum v change during single step, less than inf to prevent mode hop
+        self.dt = 0.25
 
         
     def _stabilizer_core(self, freq_diff):
