@@ -34,14 +34,9 @@ class TLB6700(BaseLaser):
 
         import clr
         from System.Text import StringBuilder
-        from System import Int32
-        from System.Reflection import Assembly
-        import Newport
-
-        clr.AddReference(r'mscorlib')
-        sys.path.append('C:\\Program Files\\New Focus\\New Focus Tunable Laser Application\\')
+        clr.AddReference('C:\\Program Files\\New Focus\\New Focus Tunable Laser Application\\bin\\UsbDllWrap')
         # location of new focus laser driver file
-        clr.AddReference('UsbDllWrap')
+        import Newport
 
         self.tlb = Newport.USBComm.USB()
         self.answer = StringBuilder(64)
