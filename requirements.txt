@@ -9,4 +9,5 @@ PyQt5-Frameless-Window
 rpyc
 cryptography
 
-# pyvisa-py, nidaqmx, pulsestreamer, spinapi
+# pyvisa-py, nidaqmx, pulsestreamer, spinapi, pythonnet
+# pythonnet for clr module used for TLB6700, different from 'pip install clr'
