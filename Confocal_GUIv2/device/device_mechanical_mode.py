@@ -78,6 +78,34 @@ class TLB6700(BaseLaser):
         self.__tlb_query(f'SOURce:VOLTage:PIEZO {self._piezo:.2f}')
 
 
+class LaserStabilizerTLB(BaseLaserStabilizer):
+    """
+    core logic for stabilizer
+    """
+    
+    def __init__(self, unique_id, wavemeter_handle:BaseDevice, laser_handle:BaseDevice, 
+        wavelength_lb=None, wavelength_ub=None, freq_thre=0.015, freq_deadzone=0.005):
+        super().__init__(unique_id=unique_id, wavemeter_handle=wavemeter_handle, laser_handle=laser_handle,
+            wavelength_lb=wavelength_lb, wavelength_ub=wavelength_ub, freq_thre=freq_thre, freq_deadzone=freq_deadzone)
+        self.v_mid = 0.5*(self.laser.piezo_ub + self.laser.piezo_lb)
+        self.v_min = self.laser.piezo_lb + 0.01*(self.laser.piezo_ub - self.laser.piezo_lb)
+        self.v_max = self.laser.piezo_lb + 0.99*(self.laser.piezo_ub - self.laser.piezo_lb)
+        self.P = -1/0.766 # +1V piezo -> -0.766GHz freq, scaling factor of PID control
+        self.v_step = 1 # maximum v change during single step, less than inf to prevent mode hop
+
+        
+    def _stabilizer_core(self, freq_diff):
+        v_diff = np.clip(self.P*freq_diff, -self.v_step, self.v_step) # limit range of v_diff
+        v_0 = self.laser.piezo
+        if (v_0+v_diff)<self.v_min:
+            self.laser.piezo = self.v_min
+        elif (v_0+v_diff)>self.v_max:
+            self.laser.piezo = self.v_max
+        else:
+            self.laser.piezo = v_0+v_diff
+        return
+
+
 
 class DLCpro(BaseLaser):
     """
