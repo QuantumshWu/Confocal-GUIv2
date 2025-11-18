@@ -1157,6 +1157,7 @@ class DeviceGUI(QWidget):
         main.addStretch(1)
         self.setLayout(main)
 
+        self._refresh_interval = 200*(len(self._active_refresh_prop_list)//5 + 1)
         self._refresh_timer = QTimer(self)
         self._refresh_timer.setInterval(self._refresh_interval)
         self._refresh_timer.timeout.connect(self._refresh_all_props)

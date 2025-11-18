@@ -555,7 +555,11 @@ class Camera(BaseCounter):
         # skip the incomplete first frame
         self.exposure = exposure
         counts = int(self.image_sum(counts=int(np.ceil(self.exposure/self.overhead))))
-        return [counts,]
+        if self.is_cancel:
+            # make sure stop the measurement when receives stop
+            raise DeviceCanceled()
+        else:
+            return [counts,]
 
     @property
     def data_len(self):
