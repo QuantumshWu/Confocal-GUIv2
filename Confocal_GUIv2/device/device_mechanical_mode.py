@@ -551,15 +551,17 @@ class Camera(BaseCounter):
 
     @BaseDevice.ManagedProperty('func', thread_safe=True)
     def read_counts(self, exposure=0.1, sample_num=1000, parent=None):
-        _ = int(self.image_sum(counts=1))
-        # skip the incomplete first frame
-        self.exposure = exposure
-        counts = int(self.image_sum(counts=int(np.ceil(self.exposure/self.overhead))))
+        try:
+            _ = int(self.image_sum(counts=1))
+            # skip the incomplete first frame
+            self.exposure = exposure
+            counts = int(self.image_sum(counts=int(np.ceil(self.exposure/self.overhead))))
+        except Exception as e:
+            log_error(e)
+            return None
         if self.is_cancel:
-            # make sure stop the measurement when receives stop
             raise DeviceCanceled()
-        else:
-            return [counts,]
+        return [counts,]
 
     @property
     def data_len(self):
