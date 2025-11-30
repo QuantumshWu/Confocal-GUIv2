@@ -378,12 +378,12 @@ class BaseMeasurement(ABC, metaclass=MeasurementMeta):
                 is_load = True if address is not None else False
 
                 # 1) Read GUI-control parameters without removing them
-                fig                 = args['fig']
-                auto_save_and_close = args['auto_save_and_close']
-                qt_parent           = args['qt_parent']
+                fig                 = args.get('fig', None)
+                auto_save_and_close = args.get('auto_save_and_close', False)
+                qt_parent           = args.get('qt_parent', None)
 
-                relim_mode          = args['relim_mode']
-                update_time         = args['update_time']
+                relim_mode          = args.get('relim_mode', 'normal')
+                update_time         = args.get('update_time', 0.1)
 
 
                 config_kwargs = {k: args[k] for k in cls.KEYS_FOR_INIT_CONFIG if k in args}
@@ -582,7 +582,6 @@ def load(addr='', fig=None, is_GUI=False, is_print_log=False, qt_parent=None):
     if address is None:
         return None
 
-    
     loaded = np.load(address, allow_pickle=True)
     keys = loaded.files
     if is_print_log is True:

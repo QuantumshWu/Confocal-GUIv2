@@ -160,6 +160,58 @@ class DSG836(BaseRF):
 
     def close(self):
         pass
+
+class SynthUSB3(BaseRF):
+    """
+    Class for SynthUSB3
+    
+    power in dbm
+    
+    frequency for frequency
+    
+    always on, seems no commands to set on/off
+    """
+    
+    def __init__(self, unique_id, visa_address='ASRL12::INSTR', power_ub=-5, power_lb=None):
+        import pyvisa
+        rm = pyvisa.ResourceManager()
+        self.handle = rm.open_resource(visa_address)
+        self.power_ub = power_ub
+        self.power_lb = power_lb
+        self.on = True
+
+        
+    @BaseDevice.ManagedProperty('float', thread_safe=True)
+    def power(self):
+        self._power = eval(self.handle.query('W?')[:-1])
+        return self._power
+    
+    @power.setter
+    def power(self, value):
+        self._power = value
+        self.handle.write(f'W{self._power}')
+    
+    @BaseDevice.ManagedProperty('float', monitor=True, thread_safe=True)
+    def frequency(self):
+        self._frequency = eval(self.handle.query('f?')[:-1])
+        return self._frequency
+    
+    @frequency.setter
+    def frequency(self, value):
+        self._frequency = value
+        self.handle.write(f'f{self._frequency}')
+           
+    @BaseDevice.ManagedProperty('bool', thread_safe=True)
+    def on(self):
+        return self._on
+    
+    @on.setter
+    def on(self, value):
+        self._on = value
+
+
+    def close(self):
+        pass
             
 class Pulse(BasePulse):
     """

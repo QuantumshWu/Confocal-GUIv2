@@ -111,6 +111,10 @@ class DataFigure():
         self.fit = None
         self.fit_func = None
         self.text = None
+
+        # store scatter artists created when fitting in 1D
+        self._scatter_list = []
+
         self.info = self.live_plot.controller.measurement.info
         self.measurement_name = self.live_plot.controller.measurement.name
         self._load_unit()
@@ -144,6 +148,9 @@ class DataFigure():
         else:
             self.conversion_map = None
 
+        if (self.conversion_map is None) or (self.unit_original not in self.conversion_map):
+            self.unit_original = self.unit
+
         self._update_transform_back()
         
 
@@ -169,7 +176,7 @@ class DataFigure():
         if type == 'y':
             return round((x-self.grid_center[1])/self.step_y)*self.step_y + self.grid_center[1]
 
-    def save(self, addr='', extra_info=None):
+    def save(self, addr='', extra_info=None, save_type='jpg'):
         current_time = time.localtime()
         current_date = time.strftime("%Y-%m-%d", current_time)
         current_time_formatted = time.strftime("%H:%M:%S", current_time)
@@ -198,7 +205,7 @@ class DataFigure():
         # addr="" → name_time
         # addr="xxx/yyy" → xxx/yyy_name_time
 
-        self.fig.savefig(f'{base}.jpg')
+        self.fig.savefig(f'{base}.{save_type}')
         np.savez(f'{base}.npz', data_x = self.data_x_original, data_y = self.data_y, \
             info = info)
         # here save the data state before any change_unit in data_figure
@@ -448,6 +455,7 @@ class DataFigure():
         self._min_overlap(self.fig.axes[0], self.text)
         for line in self.live_plot.lines:
             line.set_alpha(0.5)
+        self._line_to_scatter()
 
         self.fig.canvas.draw()
 
@@ -549,7 +557,8 @@ class DataFigure():
 
         if self.plot_type == '1D':
             if self.fit is None:
-                self.fit = self.fig.axes[0].plot(self.data_x[:, 0], self._fit_func(self.data_x[:, 0], *popt), color='orange', linestyle='--')
+                self.fit = self.fig.axes[0].plot(self.data_x[:, 0], self._fit_func(self.data_x[:, 0], *popt), color='orange'
+                    , linestyle='-', linewidth=2, alpha=0.5)
             else:
                 self.fit[0].set_ydata(self._fit_func(self.data_x[:, 0], *popt))
         elif self.plot_type == '2D':
@@ -597,6 +606,7 @@ class DataFigure():
 
         else:
             self.p0_list = [p0, ]
+            self.p0 = p0
             guess_center = self.p0[0]
             guess_full_width = self.p0[1]
             guess_height = self.p0[2]
@@ -646,6 +656,7 @@ class DataFigure():
                 return
         else:
             self.p0_list = [p0, ]
+            self.p0 = p0
             guess_center = self.p0[0]
             guess_full_width = self.p0[1]
             guess_height = self.p0[2]
@@ -700,7 +711,7 @@ class DataFigure():
 
         else:
             self.p0_list = [p0, ]
-
+            self.p0 = p0
             guess_amplitude = self.p0[0]
             guess_offset = self.p0[1]
             guess_omega = self.p0[2]
@@ -737,7 +748,7 @@ class DataFigure():
 
         else:
             self.p0_list = [p0, ]
-
+            self.p0 = p0
             guess_amplitude = self.p0[0]
             guess_offset = self.p0[1]
             guess_decay = self.p0[2]
@@ -784,7 +795,7 @@ class DataFigure():
 
         else:
             self.p0_list = [p0, ]
-
+            self.p0 = p0
             guess_amplitude = self.p0[0]
             guess_offset = self.p0[1]
             guess_size = self.p0[2]
@@ -808,11 +819,47 @@ class DataFigure():
         if self.fit is not None:
             for fit in self.fit:
                 fit.remove()
+        # restore original lines and remove scatter points
+        self._scatter_to_line()
         for line in self.live_plot.lines:
             line.set_alpha(1)
         self.fig.canvas.draw()
         self.fit = None
         self.text = None
+
+
+    def _line_to_scatter(self):
+        """Replace data lines with scatter points for 1D plots during fitting."""
+        if self.plot_type != '1D':
+            return
+
+        # already converted
+        if self._scatter_list:
+            return
+
+        ax = self.fig.axes[0]
+        self._scatter_list = []
+
+        line = self.live_plot.lines[0]
+        x = np.array(line.get_xdata())
+        y = np.array(line.get_ydata())
+        # create scatter with the same color
+        sc = ax.scatter(x, y, s=20, color='lightgrey', edgecolors='none')
+        self._scatter_list.append(sc)
+        # hide the original line
+        line.set_visible(False)
+
+    def _scatter_to_line(self):
+        """Remove scatter points and restore original lines."""
+        # remove scatter artists
+        if self._scatter_list:
+            for sc in self._scatter_list:
+                sc.remove()
+            self._scatter_list = []
+
+        # show original lines again and reset alpha
+        line = self.live_plot.lines[0]
+        line.set_visible(True)
 
     def _update_unit(self, transform):
 
@@ -878,6 +925,80 @@ class DataFigure():
             temp_unit = next_unit
 
         self.transform_back = (lambda x: functools.reduce(lambda a, f: f(a), transforms, x)) if transforms else lambda x: x
+
+    def change_cmap(self, cmap=None):
+        """
+        Change colormap for 2D plots (image, colorbar and drag selector lines).
+
+        Parameters
+        ----------
+        cmap : str or matplotlib.colors.Colormap
+            New colormap name or Colormap instance.
+        """
+        # Only meaningful for 2D images
+        if self.plot_type != '2D':
+            return
+
+        # --- 1. Resolve colormap object and keep the same "bad" color ---
+        if isinstance(cmap, str):
+            try:
+                base_cmap = matplotlib.cm.get_cmap(cmap)
+            except Exception:
+                # Fallback for newer Matplotlib versions
+                base_cmap = plt.get_cmap(cmap)
+        else:
+            return
+
+        new_cmap = base_cmap.copy()
+
+        # Keep the same bad_color as Live2DDis
+        bad_color = getattr(self.live_plot, "bad_color", "white")
+        new_cmap.set_bad(bad_color)
+
+        # --- 2. Get the image / mappable (imshow result) ---
+        ax0 = self.fig.axes[0]
+        mappable = None
+
+        # Standard imshow path: image stored in ax.images
+        if ax0.images:
+            mappable = ax0.images[0]
+        # Fallback: Live2DDis also keeps the image in live_plot.lines[0]
+        elif hasattr(self.live_plot, 'lines') and self.live_plot.lines:
+            mappable = self.live_plot.lines[0]
+
+        if mappable is None:
+            # Nothing to update
+            return
+
+        mappable.set_cmap(new_cmap)
+
+        # --- 3. Update colorbar so it uses the new colormap ---
+        cbar = getattr(self.live_plot, 'cbar', None)
+        if cbar is not None:
+            # Re-bind colorbar normalization and colormap to the mappable
+            cbar.update_normal(mappable)
+
+        # --- 4. Update DragHLine lines to use colors from the new colormap ---
+        # Live2DDis.choose_selector() creates:
+        # self.line_l, self.line_h, self.drag = DragHLine(self.line_l, self.line_h, ...)
+        line_l = getattr(self.live_plot, "line_l", None)
+        line_h = getattr(self.live_plot, "line_h", None)
+
+        if line_l is not None:
+            line_l.set_color(new_cmap(0.0))
+        if line_h is not None:
+            line_h.set_color(new_cmap(0.95))
+
+        # Optional: keep DragHLine object's internal references consistent
+        drag = getattr(self.live_plot, "drag", None)
+        if drag is not None:
+            if getattr(drag, "line_l", None) is line_l:
+                drag.line_l.set_color(new_cmap(0.0))
+            if getattr(drag, "line_h", None) is line_h:
+                drag.line_h.set_color(new_cmap(0.95))
+
+        # --- 5. Redraw figure ---
+        self.fig.canvas.draw()
 
 
 
