@@ -102,65 +102,121 @@ def enable_long_output():
     """
     display(HTML(css_code))
 
-class SmartOffsetFormatter(ticker.Formatter):
-    """
-    Tick formatter with tight length budget and stable scaling/offset:
 
-    Policy
-    ------
-    - If scaled/offset (k != 0 or C != 0): ALL non-zero labels must have
-      |value| in [0.1, 10). Negatives allowed. Zero allowed anywhere.
-    - Prefer solutions that keep step/10^k near {1, 2, 2.5, 5}.
-    - Prefer an offset C that is DISPLAY-GRID aligned; only *display* C as
-      a rounded multiple of that grid when it is already aligned; never
-      "beautify" C to a different value.
-    - Plain (k=0, C=0) is used only if it satisfies length+uniqueness.
-    - Stickiness: reuse previous (C, k) if still valid.
-    - Degrade rule: if no strict solution exists, keep a scaled view that
-      satisfies the magnitude window with the max decimals allowed by the
-      length budget (uniqueness may break), instead of collapsing to plain.
+class SmartOffsetLocator(ticker.Locator):
 
-    Notes
-    -----
-    - MAX_LEN caps label length. We compute the minimal decimals to both
-      fit the budget and keep uniqueness (strict path).
-    - Offset text shows "×1e{k}" and "+C". The "+C" is displayed on the
-      chosen display-grid if and only if C is aligned to that grid; otherwise
-      it is shown exactly (no coarse rounding that would change its value).
-    - axis_type='x' prints scale and offset on separate lines.
-    """
-
-    def __init__(self, offset_xy=None, offset_coords='axes',
-                 offset_ha=None, offset_va=None, axis_type='y'):
+    def __init__(self):
         super().__init__()
-        # Budgets / knobs
-        self.MAX_LEN = 4
-        self.K_MAX = 12
-        self.OFFSET_THRESHOLD_DECADES = 1  # display grid ~ 10^(step_oom + this)
+        self.steps = [1, 2, 5]
+        self.min_ticks = 3
+        self.max_ticks = 8
 
-        # Placement config for offset text
+        # Internal scale split rule (keep behavior unchanged)
+        self.oom = 3
+        self.k = 0
+        self.m = 0
+        self.C = 0
+
+        self.axis = None
+
+    def set_axis(self, axis):
+        self.axis = axis
+        return super().set_axis(axis)
+
+    def tick_values(self, vmin, vmax):
+        vmin_order, vmax_order = np.sort([vmin, vmax])
+        delta = vmax_order - vmin_order
+
+        # Guard: Matplotlib may ask for ticks on degenerate intervals
+        if not np.isfinite(delta) or delta == 0:
+            self.ticks = []
+            self.n_array = []
+            return self.ticks
+
+        exp_part = round(np.floor(np.log10(delta)))
+        float_part = delta / 10**exp_part
+
+        # Choose (step, m) so that tick count is within [min_ticks, max_ticks]
+        for step in self.steps:
+            if self.min_ticks <= float_part / step <= self.max_ticks:
+                self.step = step
+                self.m = exp_part
+                self.k = 0
+                break
+            elif self.min_ticks <= float_part * 10 / step <= self.max_ticks:
+                self.step = step
+                self.m = exp_part - 1
+                self.k = 0
+                break
+
+        # Compute offset C (rounded to 10**(m + k + oom))
+        ave = 0.5 * (vmin_order + vmax_order)
+        self.C_int = round(ave / 10**(self.m + self.k + self.oom))
+        self.C_exp = round(self.m + self.k + self.oom)
+        self.C = self.C_int * 10**self.C_exp
+
+        # Build integer tick indices n and map to tick values
+        n_min = round(np.ceil((vmin_order - self.C) * 10**(-self.m - self.k) / self.step))
+        n_max = round(np.floor((vmax_order - self.C) * 10**(-self.m - self.k) / self.step))
+        self.n_array = [n for n in range(n_min, n_max + 1)]
+
+        # Preserve original direction if vmin > vmax
+        if vmin > vmax:
+            self.n_array[:] = self.n_array[::-1]
+
+        unit = self.step * 10**(self.k + self.m)
+        self.ticks = [n * unit + self.C for n in self.n_array]
+
+        # Decide whether to move exponent to common scale factor k (keep rule unchanged)
+        if (self.m <= (-self.oom)) or max(np.abs(self.n_array)) * self.step * 10**self.m >= 10**(self.oom + 1):
+            self.k = self.m
+            self.m = 0
+        else:
+            self.k = 0
+            self.m = self.m
+
+        return self.ticks
+
+    def __call__(self):
+        if self.axis is None:
+            return []
+        vmin, vmax = self.axis.get_view_interval()
+        if (vmax - vmin) == 0:
+            return []
+        return self.tick_values(vmin, vmax)
+
+
+class SmartOffsetFormatter(ticker.Formatter):
+
+    def __init__(
+        self,
+        locator,
+        axis_type='y',            # 'x' => put scale and offset on separate lines
+        offset_xy=None,           # optional: move the offsetText position
+        offset_coords='axes',     # 'axes' or 'data'
+        offset_ha=None,
+        offset_va=None,
+    ):
+        super().__init__()
+        self.locator = locator
+        self.axis_type = axis_type
+
+        # Optional placement of offsetText
         self._offset_xy = offset_xy
         self._offset_coords = offset_coords
         self._offset_ha = offset_ha
         self._offset_va = offset_va
-        self.axis_type = axis_type  # 'x' => newline between scale and offset
 
-        # Per-draw state
-        self.locs = np.array([], dtype=float)
-        self.abs_step = np.inf
-        self._C = 0.0
-        self._k = 0
-        self._decimals = 0
+        # Max length for "+C" text; internal knob (NOT an input argument)
+        self.C_maxlen = 7
 
-        # Sticky state
-        self._prev_C = 0.0
-        self._prev_k = 0
-        self._had_prev = False
+        # Expose absolute step in data units (used by update_data_meter)
+        self.abs_step = 1.0
 
-    # ---------- Offset text placement patch ----------
     def set_axis(self, axis):
         super().set_axis(axis)
 
+        # Patch: relocate axis offsetText (keep original mechanism)
         def _apply(off):
             if self._offset_xy is None:
                 return
@@ -188,293 +244,122 @@ class SmartOffsetFormatter(ticker.Formatter):
             axis._update_offset_text_position = types.MethodType(_patched_uotp, axis)
             axis._offpos_patched_by = self
 
-    # ---------- Helpers ----------
-    @staticmethod
-    def _finite(arr):
-        m = np.isfinite(arr)
-        return arr[m], m
-
-    @staticmethod
-    def _finite_unique(arr):
-        m = np.isfinite(arr)
-        return np.unique(arr[m])
-
-    def _robust_step(self, vals):
-        u = self._finite_unique(vals)
-        if u.size >= 2:
-            d = np.diff(np.sort(u))
-            d = d[d > 0]
-            if d.size > 0:
-                return float(np.median(d))
-        return 0.0
-
-    def _labels(self, vals, C, k, dec):
-        y = (vals - C) / (10.0 ** k)
-        m = np.isfinite(y)
-        y = np.where(m & (np.abs(y) < 10.0 ** (-dec - 2)), 0.0, y)  # avoid "-0"
-        out = np.array([f"{v:.{dec}f}" for v in y], dtype='U')
-        has_dot = np.char.find(out, '.') >= 0
-        out = np.where(has_dot, np.char.rstrip(out, '0'), out)
-        out = np.where(np.char.endswith(out, '.'), np.char.rstrip(out, '.'), out)
-        out = np.where(out == '-0', '0', out)
-        # Safety trim (rare)
-        too_long = np.char.str_len(out) > self.MAX_LEN
-        if np.any(too_long):
-            trimmed = out.copy()
-            for i in np.where(too_long)[0]:
-                s = trimmed[i]
-                if '.' in s:
-                    s = s.split('.', 1)[0]
-                    if s == '-0':
-                        s = '0'
-                    trimmed[i] = s
-            out = trimmed
-        return out
-
-    def _len_unique_ok(self, vals, C, k, dec):
-        lab = self._labels(vals, C, k, dec)
-        if np.any(np.char.str_len(lab) > self.MAX_LEN):
-            return False
-        vfin, m = self._finite(vals)
-        return np.unique(lab[m]).size >= np.unique(vfin).size
-
-    def _needed_decimals_for_step(self, k):
-        if (self.abs_step <= 0.0) or (not np.isfinite(self.abs_step)):
-            return 0
-        step_scaled = self.abs_step / (10.0 ** k)
-        if step_scaled >= 1.0:
-            return 0
-        return int(np.ceil(-np.log10(step_scaled)))
-
-    def _decimals_budget(self, vals, C, k):
-        y = (vals - C) / (10.0 ** k)
-        vfin, _ = self._finite(y)
-        if vfin.size == 0:
-            return 0, False
-        has_neg = np.any(vfin < 0)
-        sign_chars = 1 if has_neg else 0
-        a = np.abs(vfin)
-        nz = a[a > 0]
-        if nz.size == 0:
-            int_max = 1
-        else:
-            p = np.floor(np.log10(nz))
-            int_max = int(np.max(p)) + 1
-            int_max = max(1, int_max)
-        room = self.MAX_LEN - sign_chars - int_max
-        if room < 0:
-            return None, has_neg
-        dec_allowed = max(0, room - 1) if room >= 1 else 0  # 1 char for '.'
-        return dec_allowed, has_neg
-
-    def _pick_decimals(self, vals, C, k):
-        dec_allowed, has_neg = self._decimals_budget(vals, C, k)
-        if dec_allowed is None:
-            return None, has_neg
-        dec_need = max(0, min(dec_allowed, self._needed_decimals_for_step(k)))
-        for dec in range(dec_need, dec_allowed + 1):
-            if self._len_unique_ok(vals, C, k, dec):
-                return dec, has_neg
-        return None, has_neg
-
-    def _max_decimals(self, vals, C, k):
-        dec_allowed, has_neg = self._decimals_budget(vals, C, k)
-        if dec_allowed is None:
-            return 0, has_neg
-        dec_need = max(0, min(dec_allowed, self._needed_decimals_for_step(k)))
-        return min(dec_allowed, max(dec_need, 0)), has_neg
-
-    def _scaled_in_target(self, vals, C, k):
-        y = (vals - C) / (10.0 ** k)
-        vfin, _ = self._finite(y)
-        if vfin.size == 0:
-            return True
-        a = np.abs(vfin)
-        nz = a > 0
-        if not np.any(nz):
-            return True
-        return bool(np.all((a[nz] >= 0.1) & (a[nz] < 10.0)))
-
-    def _good_k_core(self, step):
-        # Bring step/10^k into [1,10), then bias toward {1,2,2.5,5}.
-        if step <= 0 or not np.isfinite(step):
-            return 0
-        k = int(np.floor(np.log10(step)))  # step/10^k in [1,10)
-        return k
-
-    @staticmethod
-    def _nice_score(step_scaled):
-        # Prefer closeness to {1,2,2.5,5}
-        nice = np.array([1.0, 2.0, 2.5, 5.0])
-        return float(np.min(np.abs(np.log(step_scaled / nice))))
-
-    def _display_grid(self, step):
-        if step > 0 and np.isfinite(step):
-            step_oom = int(np.floor(np.log10(step)))
-        else:
-            step_oom = 0
-        gexp = step_oom + self.OFFSET_THRESHOLD_DECADES
-        return 10.0 ** gexp  # display grid size
-
-    @staticmethod
-    def _aligned(value, grid, tol=5e-12):
-        if grid == 0 or not np.isfinite(grid):
-            return False
-        # Alignment test: distance to nearest grid multiple is tiny
-        r = np.round(value / grid)
-        return bool(np.abs(value - r * grid) <= tol * max(1.0, np.abs(value)))
-
-    # ---------- Core selection ----------
     def set_locs(self, locs):
+        # Matplotlib calls it; keep for API compatibility
         self.locs = np.asarray(locs, dtype=float)
-        if self.locs.size == 0:
-            self.abs_step = np.inf
-            self._C = 0.0; self._k = 0; self._decimals = 0
-            return
 
-        self.abs_step = self._robust_step(self.locs)
-        grid_disp = self._display_grid(self.abs_step)
+        # Update absolute tick step in data units (no float rounding logic here)
+        try:
+            self.abs_step = abs(self.locator.step * 10**(self.locator.k + self.locator.m))
+        except Exception:
+            self.abs_step = 1.0
 
-        # Candidate offsets:
-        vfin, _ = self._finite(self.locs)
-        med = float(np.nanmedian(vfin)) if vfin.size else 0.0
-        first = float(vfin[0]) if vfin.size else 0.0
+    # ---- the only extracted helper: integer-based formatting to avoid float errors ----
+    def _fmt_scaled_int(self, value_int, exp10, force_sign=False):
+        """
+        Format (value_int * 10**exp10) exactly using integer arithmetic.
+        - exp10 >= 0 => append zeros
+        - exp10 < 0  => insert decimal point and trim trailing zeros
+        """
+        if not np.isfinite(value_int):
+            return ""
 
-        def snap(v):
-            if not np.isfinite(v):
-                return 0.0
-            return float(np.round(v / grid_disp) * grid_disp)
+        v = int(value_int)
+        if v == 0:
+            return ("+0" if force_sign else "0")
 
-        C_candidates = []
-        if self._had_prev:
-            C_candidates.append(self._prev_C)
-        # prefer snapped median, then snapped first, then exact median, then 0
-        C_candidates += [snap(med), snap(first), med, 0.0]
+        sign = "-" if v < 0 else ("+" if force_sign else "")
+        base = abs(v)
 
-        # Candidate k around a good core guess
-        k0 = self._good_k_core(self.abs_step)
-        def k_order(center):
-            # center first, then spread
-            order = []
-            for d in range(0, self.K_MAX + 1):
-                for s in ([+1] if d == 0 else [-1, +1]):
-                    kk = center + s * d
-                    if -self.K_MAX <= kk <= self.K_MAX:
-                        order.append(kk)
-            return order
+        if exp10 >= 0:
+            return sign + str(base * (10 ** exp10))
 
-        # ---- A) Reuse previous if strict-valid ----
-        if self._had_prev:
-            dec_prev, _ = self._pick_decimals(self.locs, self._prev_C, self._prev_k)
-            if dec_prev is not None:
-                prev_scaled = (self._prev_k != 0) or (self._prev_C != 0.0)
-                if (not prev_scaled) or self._scaled_in_target(self.locs, self._prev_C, self._prev_k):
-                    self._C, self._k, self._decimals = self._prev_C, self._prev_k, dec_prev
-                    return
+        denom = 10 ** (-exp10)
+        q, r = divmod(base, denom)
+        frac = f"{r:0{-exp10}d}".rstrip("0")
+        return f"{sign}{q}.{frac}" if frac else f"{sign}{q}"
+    # -------------------------------------------------------------------------------
 
-        # ---- B) Try plain strictly ----
-        dec_plain, _ = self._pick_decimals(self.locs, 0.0, 0)
-        if dec_plain is not None:
-            self._C, self._k, self._decimals = 0.0, 0, dec_plain
-            self._prev_C, self._prev_k, self._had_prev = self._C, self._k, True
-            return
-
-        # ---- C) Search strict scaled solutions; record best degrade ----
-        best_strict = None   # (score_tuple, C, k, dec)
-        best_degrade = None  # (score_tuple, C, k, dec)
-
-        for C in C_candidates:
-            # choose center: prefer making step/10^k in [1,10)
-            center = k0
-            for k in k_order(center):
-                # must satisfy magnitude window for scaled
-                if not self._scaled_in_target(self.locs, C, k):
-                    continue
-
-                step_scaled = (self.abs_step / (10.0 ** k)) if (self.abs_step > 0 and np.isfinite(self.abs_step)) else 1.0
-                nice_score = self._nice_score(step_scaled)
-                C_aligned = self._aligned(C, grid_disp)
-
-                # strict path
-                dec_strict, _ = self._pick_decimals(self.locs, C, k)
-                if dec_strict is not None:
-                    score = (nice_score, int(not C_aligned), abs(k), dec_strict)
-                    cand = (score, C, k, dec_strict)
-                    if (best_strict is None) or (cand[0] < best_strict[0]):
-                        best_strict = cand
-                    # keep looking; we want the best strict
-
-                # degrade candidate (ignore uniqueness, keep budget)
-                dec_max, _ = self._max_decimals(self.locs, C, k)
-                score_d = (nice_score, int(not C_aligned), abs(k), -dec_max)
-                cand_d = (score_d, C, k, dec_max)
-                if (best_degrade is None) or (cand_d[0] < best_degrade[0]):
-                    best_degrade = cand_d
-
-        # Take the best strict if exists
-        if best_strict is not None:
-            _, C, k, dec = best_strict
-            self._C, self._k, self._decimals = C, k, dec
-            self._prev_C, self._prev_k, self._had_prev = self._C, self._k, True
-            return
-
-        # ---- D) Degrade to the best scaled view ----
-        if best_degrade is not None:
-            _, C, k, dec = best_degrade
-            self._C, self._k, self._decimals = C, k, dec
-            self._prev_C, self._prev_k, self._had_prev = self._C, self._k, True
-            return
-
-        # ---- E) Last resort: plain best-effort ----
-        dec_allowed, _ = self._decimals_budget(self.locs, 0.0, 0)
-        if dec_allowed is None:
-            dec_allowed = 0
-        dec_need = self._needed_decimals_for_step(0)
-        self._C, self._k, self._decimals = 0.0, 0, min(dec_allowed, max(0, dec_need))
-        self._prev_C, self._prev_k, self._had_prev = self._C, self._k, True
-
-    # ---------- Render a single tick ----------
     def __call__(self, x, pos=None):
-        y = (x - self._C) / (10.0 ** self._k)
-        if np.isfinite(y) and np.isclose(y, 0.0):
-            y = 0.0
-        s = f"{y:.{self._decimals}f}"
-        if '.' in s:
-            s = s.rstrip('0').rstrip('.')
-        if s == '-0':
-            s = '0'
-        if len(s) > self.MAX_LEN and '.' in s:
-            s = s.split('.', 1)[0]
-            if s == '-0':
-                s = '0'
-        return s
+        if x is None or np.ma.is_masked(x):
+            return ""
+        try:
+            x = float(x)
+        except (TypeError, ValueError):
+            return ""
+        if not np.isfinite(x):
+            return ""
 
-    # ---------- Offset text (grid-aware but faithful to C) ----------
+        # Map current x to the nearest tick index (stable and simple)
+        if not getattr(self.locator, "ticks", None):
+            return ""
+        index = int(np.argmin([np.abs(x - t) for t in self.locator.ticks]))
+        n = self.locator.n_array[index]
+
+        # Tick label is n*step scaled by 10**m (no offset here)
+        base_int = int(n * self.locator.step)
+        return self._fmt_scaled_int(base_int if base_int != 0 else 0, int(self.locator.m), force_sign=False)
+
+    def _format_C(self):
+        C_int = self.locator.C_int
+        C_exp = int(self.locator.C_exp)
+
+        # Plain exact "+C" (integer-safe)
+        plain = self._fmt_scaled_int(C_int, C_exp, force_sign=True)
+        if (not plain) or plain in ("+0", "-0"):
+            return ""
+
+        if len(plain) <= self.C_maxlen:
+            return plain
+
+        # Scientific form (integer-safe): C = C_int * 10**C_exp
+        cint = int(C_int)
+        sign = "-" if cint < 0 else "+"
+        digits = str(abs(cint))
+
+        if digits == "0":
+            return ""
+
+        # Normalize to d.dddd e ±E
+        sci_exp = C_exp + (len(digits) - 1)
+        exp_str = f"e{sci_exp:+d}"  # e+3 / e-12 ...
+
+        # Mantissa length rule:
+        # - Prefer (sign + mantissa) length == (C_maxlen - 3)
+        # - If exp_str is longer than 3, shrink mantissa further to keep total <= C_maxlen
+        mant_total_max = max(2, self.C_maxlen - 3)  # includes sign
+        mant_total = max(2, min(mant_total_max, self.C_maxlen - len(exp_str)))
+        mant_len = max(1, mant_total - 1)  # mantissa excluding sign
+
+        # Build mantissa with decimal and cut fractional part by length
+        if len(digits) == 1 or mant_len < 3:
+            mant = digits[0]  # no room for "d.xxx"
+        else:
+            # "d." takes 2 chars, remaining is fractional digits
+            n_frac = mant_len - 2
+            mant = digits[0] + "." + digits[1:1 + n_frac]
+
+        return sign + mant + exp_str
+
     def get_offset(self):
+        k = self.locator.k
+
         parts = []
-        if self._k != 0:
-            parts.append(f'×1e{self._k}')
-        if self._C != 0.0:
-            # Display-round C only if it is ALREADY aligned to the display grid.
-            grid_disp = self._display_grid(self.abs_step)
-            if self._aligned(self._C, grid_disp):
-                # decimals implied by grid
-                if grid_disp > 0 and np.isfinite(grid_disp):
-                    dec = max(0, -int(np.floor(np.log10(grid_disp))))
-                else:
-                    dec = 0
-                s = f"{np.round(self._C, dec):.{dec}f}"
-                if '.' in s:
-                    s = s.rstrip('0').rstrip('.')
-            else:
-                # Not aligned: show exact (compact) numeric string, no coarse rounding
-                s = np.format_float_positional(self._C, unique=True, trim='-')
-            if s == '-0':
-                s = '0'
-            if s and s[0] not in '+-':
-                s = '+' + s
-            parts.append(s)
-        return '\n'.join(parts) if self.axis_type == 'x' else ''.join(parts)
+        if k != 0:
+            parts.append(f"×1e{k}")
+
+        cstr = self._format_C()
+        if cstr:
+            parts.append(cstr)
+
+        if not parts:
+            return ""
+
+        if self.axis_type == "x" and len(parts) == 2:
+            return parts[0] + "\n" + parts[1]
+        return "".join(parts)
+
+
 
 
 _DISPLAY_HANDLES = {}
@@ -708,11 +593,16 @@ class BaseLivePlotter(ABC):
             # update canvas so no residual from previous plot
             self.axes = self.create_axes_fixed(self.fixed_data_px, self.margins_px)
             
-        self.axes_formatter = SmartOffsetFormatter(offset_xy=(0, 1.005), offset_ha='left', offset_va='bottom')
+        yloc = SmartOffsetLocator()
+        self.axes.yaxis.set_major_locator(yloc)
+        self.axes_formatter = SmartOffsetFormatter(yloc, offset_xy=(0, 1.005), offset_ha='left', offset_va='bottom')
         self.axes.yaxis.set_major_formatter(self.axes_formatter)
         # make sure no long ticks induce cut off of label
 
-        self.axes.xaxis.set_major_formatter(SmartOffsetFormatter(offset_xy=(0.9, -0.1), offset_ha='left', offset_va='top', axis_type='x'))
+        xloc = SmartOffsetLocator()
+        self.axes.xaxis.set_major_locator(xloc)
+        self.axes_formatter_x = SmartOffsetFormatter(xloc, offset_xy=(0.9, -0.1), offset_ha='left', offset_va='top', axis_type='x')
+        self.axes.xaxis.set_major_formatter(self.axes_formatter_x)
         # make sure no long ticks induce cut off of label
 
 
@@ -1251,18 +1141,9 @@ class Live2DDis(BaseLivePlotter):
         # align to left while keep imshow ratio same as data ratio
 
         self.cbar = self.fig.colorbar(self.lines[0], cax = self.cax)
-        #self.fig.axes[0].set_xlim((extents[0], extents[1]))
-        #self.fig.axes[0].set_ylim((extents[2], extents[3]))
 
         self.counts_max = 10
         # filter out zero data
-
-        self.cbar.formatter = SmartOffsetFormatter(
-            offset_xy=(0.5, 1.01),
-            offset_coords='axes',
-            offset_ha='center',
-            offset_va='bottom'
-        )
 
         from matplotlib.ticker import MaxNLocator
         self.axdis.xaxis.set_major_locator(
