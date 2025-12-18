@@ -66,6 +66,7 @@ class USB6120(BaseCounterNIM):
         if port_config is None:
             port_config = {'analog_signal':'ai0', 'analog_gate':'ai1', 'analog_gate_ref':'ai2',
             'apd_signal':'PFI3', 'apd_gate':'PFI4', 'apd_gate_ref':'PFI5', 'dev_num':'Dev2'}
+        super().__init__(port_config=port_config)
         self.counter_mode_valid = ['apd', 'analog']
         self.data_mode_valid = ['single', 'ref_div', 'ref_sub', 'dual']
 
