@@ -1999,12 +1999,17 @@ class BaseCounterNIM(BaseCounter):
         import nidaqmx
         from nidaqmx.constants import AcquisitionType
         from nidaqmx.constants import TerminalConfiguration
+        from nidaqmx.stream_readers import AnalogMultiChannelReader
+
 
         defaults = {
             'dev_num':         'Dev2',
             'apd_signal':      'PFI3',
             'apd_gate':        'PFI4',
             'apd_gate_ref':    'PFI1',
+            'analog_signal':   'ai0',
+            'analog_gate':     'ai1',
+            'analog_gate_ref': 'ai2',
         }
 
         cfg = {**defaults, **(port_config or {})}
@@ -2170,6 +2175,10 @@ class BaseCounterNIM(BaseCounter):
 
     @BaseDevice.ManagedProperty('func', thread_safe=True)
     def read_counts(self, exposure=0.1, sample_num=1000, parent=None):
+
+        if exposure!=self.exposure:
+            self.set_counter()
+            self.set_timing(exposure, sample_num)
 
         if self.counter_mode == 'apd':
 

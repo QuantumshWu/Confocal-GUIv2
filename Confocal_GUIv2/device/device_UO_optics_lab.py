@@ -56,7 +56,18 @@ class USB6346(BaseCounterNI, BaseScanner):
         self.task.write([self._x/1000, self._y/1000], auto_start=True) # in V
 
 
+class USB6120(BaseCounterNIM):
+    """
+    Class for NI DAQ USB-6120
+    """
+    
+    def __init__(self, unique_id, port_config=None):
 
+        if port_config is None:
+            port_config = {'analog_signal':'ai0', 'analog_gate':'ai1', 'analog_gate_ref':'ai2',
+            'apd_signal':'PFI3', 'apd_gate':'PFI4', 'apd_gate_ref':'PFI5', 'dev_num':'Dev2'}
+        self.counter_mode_valid = ['apd', 'analog']
+        self.data_mode_valid = ['single', 'ref_div', 'ref_sub', 'dual']
 
 class AFG31152(BaseScanner):
     """

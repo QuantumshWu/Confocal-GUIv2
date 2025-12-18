@@ -1,0 +1,33 @@
+{
+  "counter": {
+    "type": "USB6120",
+    "params": {
+      "unique_id": null,
+      "port_config": {
+        "analog_signal": "ai0",
+        "analog_gate": "ai1",
+        "analog_gate_ref": "ai2",
+        "apd_signal": "PFI3",
+        "apd_gate": "PFI4",
+        "apd_gate_ref": "PFI5",
+        "dev_num": "Dev2"
+      }
+    }
+  },
+  "pulse": {
+    "type": "Pulse",
+    "params": {
+      "unique_id": null,
+      "ip": "169.254.8.2"
+    }
+  },
+  "rf": {
+    "type": "SynthUSB3",
+    "params": {
+      "unique_id": null,
+      "visa_address": "ASRL12::INSTR",
+      "power_ub": -5,
+      "power_lb": null
+    }
+  }
+}
