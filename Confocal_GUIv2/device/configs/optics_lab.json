@@ -3,16 +3,30 @@
     "type": "USB6346",
     "params": {
       "unique_id": null,
-      "port_config": "{'analog_signal':'/Dev1/ai0', 'analog_gate':'/Dev1/ai1', 'analog_gate_ref':'/Dev1/ai2',",
-      "'apd_signal'": "'PFI3', 'apd_gate':'PFI4', 'apd_gate_ref':'PFI5', 'dev_num':'Dev1'}"
+      "port_config": {
+        "analog_signal": "ai0",
+        "analog_gate": "ai1",
+        "analog_gate_ref": "ai2",
+        "apd_signal": "PFI3",
+        "apd_gate": "PFI4",
+        "apd_gate_ref": "PFI5",
+        "dev_num": "Dev1"
+      }
     }
   },
   "scanner": {
     "type": "USB6346",
     "params": {
       "unique_id": null,
-      "port_config": "{'analog_signal':'/Dev1/ai0', 'analog_gate':'/Dev1/ai1', 'analog_gate_ref':'/Dev1/ai2',",
-      "'apd_signal'": "'PFI3', 'apd_gate':'PFI4', 'apd_gate_ref':'PFI5', 'dev_num':'Dev1'}"
+      "port_config": {
+        "analog_signal": "ai0",
+        "analog_gate": "ai1",
+        "analog_gate_ref": "ai2",
+        "apd_signal": "PFI3",
+        "apd_gate": "PFI4",
+        "apd_gate_ref": "PFI5",
+        "dev_num": "Dev1"
+      }
     }
   },
   "pulse": {

@@ -2,7 +2,7 @@ from qframelesswindow import FramelessWindow, StandardTitleBar
 import sys, os, inspect, time
 import numpy as np
 from Confocal_GUIv2.helper import float2str_eng, float2str, FLOAT_PATTERN, COORDINATE_LIST_PATTERN, reentrancy_guard, str2python, python2str,\
-log_error, FLOAT_OR_X_PATTERN, FLOAT_OR_X_PARSING_PATTERN, align_to_resolution, data_x_str_validator
+log_error, FLOAT_OR_X_PATTERN, FLOAT_OR_X_PARSING_PATTERN, align_to_resolution, data_x_str_validator, parse_kv_blocks_strict
 
 from PyQt5 import QtCore, QtWidgets, uic, QtGui
 from PyQt5.QtCore import Qt, QSize, pyqtProperty, QPropertyAnimation, QTimer, QPoint, QAbstractAnimation, QEventLoop, QEvent, QRectF, \

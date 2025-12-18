@@ -721,3 +721,60 @@ FLOAT_OR_X_PATTERN = re.compile(
 
 
 
+# key must start at column 0: avoids catching "'apd_signal': ..." inside dict
+_KEYLINE = re.compile(r'^([A-Za-z_]\w*)\s*:\s*(.*)$')
+
+def parse_kv_blocks_strict(text: str):
+    """
+    Parse blocks of:
+      key: value
+    where value can span multiple lines (continuations do NOT start with key: at col0).
+
+    Returns:
+      (params: dict, err: str|None)
+    """
+    params = {}
+    cur_key = None
+    cur_lines = []
+    cur_start_line = None
+
+    def _flush():
+        nonlocal cur_key, cur_lines, cur_start_line
+        if cur_key is None:
+            return None
+
+        blob = "\n".join(cur_lines).strip()
+        val = str2python(blob)
+
+        params[cur_key] = val
+        cur_key = None
+        cur_lines = []
+        cur_start_line = None
+        return None
+
+    for lineno, raw in enumerate((text or "").splitlines(), 1):
+        line = raw.rstrip()
+        if not line.strip():
+            continue
+
+        m = _KEYLINE.match(line)
+        if m:
+            # finish previous block
+            err = _flush()
+            if err:
+                return None, err
+
+            cur_key = m.group(1)
+            cur_start_line = lineno
+            cur_lines = [m.group(2)]
+        else:
+            if cur_key is None:
+                return None, f"Line {lineno}: expected 'key: value' starting at column 0."
+            cur_lines.append(line)
+
+    # flush last
+    err = _flush()
+    if err:
+        return None, err
+
+    return params, None

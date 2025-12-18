@@ -732,19 +732,9 @@ class DeviceManagerGUI(QWidget):
                 # Parse params: only lines like "key: value"
                 text = (te_params.toPlainText() if te_params else "") or ""
                 params = {}
-                for raw in text.splitlines():
-                    s = raw.strip()
-                    if not s or ":" not in s:
-                        continue
-                    k, v = s.split(":", 1)
-                    k = k.strip()
-                    if not k:
-                        continue
-                    v = v.strip()
-                    try:
-                        params[k] = str2python(v)
-                    except Exception:
-                        params[k] = v  # fallback to raw string
+                params, err = parse_kv_blocks_strict(text)
+                if err:
+                    params = {}
 
                 cfg[name] = {"type": dtype, "params": params}
 
@@ -838,15 +828,10 @@ class DeviceManagerGUI(QWidget):
             text = te_params.toPlainText().strip()
             d = {}
             if text:
-                for lineno, line in enumerate(text.splitlines(), 1):
-                    if not line.strip():
-                        continue
-                    if ':' not in line:
-                        QMessageBox.warning(self, 'Error', f'Row {i+1}, line {lineno}: format should be key: value')
-                        return None
-                    key, val = line.split(':', 1)
-                    key = key.strip()
-                    d[key] = str2python(val)
+                d, err = parse_kv_blocks_strict(text)
+                if err:
+                    QMessageBox.warning(self, 'Error', f'Row {i+1}: {err}')
+                    return None
             cfg[name] = {'type': dtype, 'params': d}
         return cfg
 
