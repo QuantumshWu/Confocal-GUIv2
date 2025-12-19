@@ -207,8 +207,8 @@ class SmartOffsetFormatter(ticker.Formatter):
         self._offset_ha = offset_ha
         self._offset_va = offset_va
 
-        # Max length for "+C" text; internal knob (NOT an input argument)
-        self.C_maxlen = 7
+        # Max length for "+C" text
+        self.C_maxlen = 10
 
         # Expose absolute step in data units (used by update_data_meter)
         self.abs_step = 1.0
@@ -324,22 +324,7 @@ class SmartOffsetFormatter(ticker.Formatter):
         sci_exp = C_exp + (len(digits) - 1)
         exp_str = f"e{sci_exp:+d}"  # e+3 / e-12 ...
 
-        # Mantissa length rule:
-        # - Prefer (sign + mantissa) length == (C_maxlen - 3)
-        # - If exp_str is longer than 3, shrink mantissa further to keep total <= C_maxlen
-        mant_total_max = max(2, self.C_maxlen - 3)  # includes sign
-        mant_total = max(2, min(mant_total_max, self.C_maxlen - len(exp_str)))
-        mant_len = max(1, mant_total - 1)  # mantissa excluding sign
-
-        # Build mantissa with decimal and cut fractional part by length
-        if len(digits) == 1 or mant_len < 3:
-            mant = digits[0]  # no room for "d.xxx"
-        else:
-            # "d." takes 2 chars, remaining is fractional digits
-            n_frac = mant_len - 2
-            mant = digits[0] + "." + digits[1:1 + n_frac]
-
-        return sign + mant + exp_str
+        return sign + digits[0] + '.' + digits[1:self.C_maxlen-2-len(exp_str)] + exp_str
 
     def get_offset(self):
         k = self.locator.k
