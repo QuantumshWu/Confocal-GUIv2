@@ -191,6 +191,7 @@ class SynthUSB3(BaseRF):
         self.power_ub = power_ub
         self.power_lb = power_lb
         self.on = True
+        self.handle.clear()
 
         
     @BaseDevice.ManagedProperty('float', thread_safe=True)
@@ -205,13 +206,13 @@ class SynthUSB3(BaseRF):
     
     @BaseDevice.ManagedProperty('float', monitor=True, thread_safe=True)
     def frequency(self):
-        self._frequency = eval(self.handle.query('f?')[:-1])
+        self._frequency = 1e6*eval(self.handle.query('f?')[:-1])
         return self._frequency
     
     @frequency.setter
     def frequency(self, value):
         self._frequency = value
-        self.handle.write(f'f{self._frequency}')
+        self.handle.write(f'f{self._frequency/1e6}')
            
     @BaseDevice.ManagedProperty('bool', thread_safe=True)
     def on(self):
