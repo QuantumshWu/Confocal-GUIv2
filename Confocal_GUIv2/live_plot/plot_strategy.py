@@ -550,6 +550,39 @@ class BaseLivePlotter(ABC):
             ax.set_axes_locator(subdiv.new_locator(nx=nx, ny=0))
             axes_list.append(ax)
         return axes_list
+
+    def update_ticks_in_blit(self):
+        n_old = getattr(self, 'n_tick_spine_blit', 0)
+        if n_old > 0:
+            self.blit_axes[:] = self.blit_axes[:-n_old]
+            self.blit_artists[:] = self.blit_artists[:-n_old]
+        self.n_tick_spine_blit = 0
+
+        for ax in self.fig.axes:
+            # Collect all tick lines (major + minor) for both axes
+            ticks = (
+                ax.xaxis.get_ticklines()
+                + ax.yaxis.get_ticklines()
+                + ax.xaxis.get_minorticklines()
+                + ax.yaxis.get_minorticklines()
+            )
+
+            for line in ticks:
+                line.set_animated(True)
+                self.blit_axes.append(ax)
+                self.blit_artists.append(line)
+
+            # Add spines as well (also animated)
+            for spine in ax.spines.values():
+                spine.set_animated(True)
+                self.blit_axes.append(ax)
+                self.blit_artists.append(spine)
+
+            self.n_tick_spine_blit += len(ticks)
+
+        # in order to eliminate the blinking of ticks, due to imshow/lines in blit draw on top of spines/ticks
+        # here by adding spines/ticks into blit_artists after imshow/lines to ensure the plotting order
+        # spines/lines in ticks get updates after relim therefore need to be updated in blit_artists
         
     def init_figure_and_data(self):
         apply_rcparams()
@@ -598,22 +631,7 @@ class BaseLivePlotter(ABC):
             # set fit to visible 
 
         self.fig.canvas.draw()
-        
-        for ax in self.fig.axes:
-            ticks = (ax.xaxis.get_ticklines()
-                   + ax.yaxis.get_ticklines()
-                   + ax.xaxis.get_minorticklines()
-                   + ax.yaxis.get_minorticklines())
-            for line in ticks:
-                line.set_animated(True)
-                line.set_clip_box(ax.bbox)
-                self.blit_axes.append(ax)
-                self.blit_artists.append(line)
-            for spine in ax.spines.values():
-                spine.set_animated(True)
-                self.blit_axes.append(ax)
-                self.blit_artists.append(spine)
-        # in order to eliminate the blinking of ticks, due to imshow/lines in blit draw on top of spines/ticks
+        self.update_ticks_in_blit()
         
         self.bg_fig = self.fig.canvas.copy_from_bbox(self.fig.bbox)  # store bg
 
@@ -803,6 +821,7 @@ class BaseLivePlotter(ABC):
 
 
             self.set_ylim()
+            self.update_ticks_in_blit()
             return True
 
         elif self.relim_mode == 'tight':
@@ -815,6 +834,7 @@ class BaseLivePlotter(ABC):
 
             if self.ylim_min!=self.ylim_max:
                 self.set_ylim()
+                self.update_ticks_in_blit()
             return True
 
            
