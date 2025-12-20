@@ -133,7 +133,7 @@ class SmartOffsetLocator(ticker.Locator):
             self.n_array = []
             return self.ticks
 
-        exp_part = round(np.floor(np.log10(delta)))
+        exp_part = int(round(np.floor(np.log10(delta))))
         float_part = delta / 10**exp_part
 
         # Choose (step, m) so that tick count is within [min_ticks, max_ticks]
@@ -151,13 +151,13 @@ class SmartOffsetLocator(ticker.Locator):
 
         # Compute offset C (rounded to 10**(m + k + oom))
         ave = 0.5 * (vmin_order + vmax_order)
-        self.C_int = round(ave / 10**(self.m + self.k + self.oom))
-        self.C_exp = round(self.m + self.k + self.oom)
+        self.C_int = int(round(ave / 10**(self.m + self.k + self.oom)))
+        self.C_exp = int(round(self.m + self.k + self.oom))
         self.C = self.C_int * 10**self.C_exp
 
         # Build integer tick indices n and map to tick values
-        n_min = round(np.ceil((vmin_order - self.C) * 10**(-self.m - self.k) / self.step))
-        n_max = round(np.floor((vmax_order - self.C) * 10**(-self.m - self.k) / self.step))
+        n_min = int(round(np.ceil((vmin_order - self.C) * 10**(-self.m - self.k) / self.step)))
+        n_max = int(round(np.floor((vmax_order - self.C) * 10**(-self.m - self.k) / self.step)))
         self.n_array = [n for n in range(n_min, n_max + 1)]
 
         # Preserve original direction if vmin > vmax
