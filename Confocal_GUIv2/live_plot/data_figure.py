@@ -271,6 +271,17 @@ class DataFigure():
             pts_disp_full = ax.transData.transform(pts_full)
             # set center of fit as the line which text needed to avoid
 
+        def _downsample_pts(pts):
+            max_points = 1000
+            if len(pts) <= max_points:
+                return pts
+            idx = np.linspace(0, len(pts)-1, max_points).astype(int)
+            return pts[idx]
+
+        pts_disp = _downsample_pts(pts_disp)
+        pts_disp_full = _downsample_pts(pts_disp_full)
+        # make sure the _min_overlap is fast
+
 
         def total_length(pts_arr):
             """Compute the total length of a polyline given its display coordinates."""
@@ -436,7 +447,6 @@ class DataFigure():
 
     def _display_popt(self, popt, popt_str):
         # popt_str = ['amplitude', 'offset', 'omega', 'decay', 'phi'], popt_pos = 'lower left' etc
-
         _popt = popt
         formatted_popt = [f'{x:.5f}'.rstrip('0') for x in _popt]
         result_list = [f'{name}={value}' for name, value in zip(popt_str, formatted_popt)]
@@ -451,12 +461,12 @@ class DataFigure():
         else:
             self.text.set_text(result)
 
-
         self._min_overlap(self.fig.axes[0], self.text)
         for line in self.live_plot.lines:
             line.set_alpha(0.5)
-        self._line_to_scatter()
-
+        if len(self.data_y) < 2000:
+            # only change to scatter if data points are not too many otherwise slow
+            self._line_to_scatter()
         self.fig.canvas.draw()
 
     def _select_fit(self, min_num=2):
