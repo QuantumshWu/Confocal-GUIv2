@@ -445,23 +445,28 @@ class DataFigure():
 
 
 
-    def _display_popt(self, popt, popt_str):
+    def _display_popt(self, popt, popt_str, is_display=True):
         # popt_str = ['amplitude', 'offset', 'omega', 'decay', 'phi'], popt_pos = 'lower left' etc
         _popt = popt
         formatted_popt = [f'{x:.5f}'.rstrip('0') for x in _popt]
         result_list = [f'{name}={value}' for name, value in zip(popt_str, formatted_popt)]
         formatted_popt_str = '\n'.join(result_list)
         result = f"{self.formula_str}\n{formatted_popt_str}"
-                    
-        if self.text is None:
-            self.text = self.fig.axes[0].text(0.5, 0.5, 
-                                              result, transform=self.fig.axes[0].transAxes, 
-                                              color='blue', ha='center', va='center', fontsize=matplotlib.rcParams['legend.fontsize'])
-
+        
+        if is_display:            
+            if self.text is None:
+                self.text = self.fig.axes[0].text(0.5, 0.5, 
+                                                  result, transform=self.fig.axes[0].transAxes, 
+                                                  color='blue', ha='center', va='center', fontsize=matplotlib.rcParams['legend.fontsize'])
+            else:
+                self.text.set_text(result)
+            self._min_overlap(self.fig.axes[0], self.text)
         else:
-            self.text.set_text(result)
+            # clean old text
+            if self.text is not None:
+                self.text.remove()
+                self.text = None
 
-        self._min_overlap(self.fig.axes[0], self.text)
         for line in self.live_plot.lines:
             line.set_alpha(0.5)
         if len(self.data_y) < 2000:
@@ -562,8 +567,7 @@ class DataFigure():
             popt, pcov = self.p0_list[0], None
         self.popt = popt
 
-        if is_display:
-            self._display_popt(popt, self.popt_str)
+        self._display_popt(popt, self.popt_str, is_display)
 
         if self.plot_type == '1D':
             if self.fit is None:

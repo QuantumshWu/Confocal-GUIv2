@@ -559,7 +559,7 @@ class BaseMeasurement(ABC, metaclass=MeasurementMeta):
 
         return selected
 
-def load(addr='', fig=None, is_GUI=False, is_print_log=False, qt_parent=None):
+def load(addr='', fig=None, is_GUI=False, is_print_log=False, is_plot=True, qt_parent=None):
     global filename
     filename = None
     qt_parent = None # only allow controller run as 'nb' mode to block the loading process
@@ -587,6 +587,12 @@ def load(addr='', fig=None, is_GUI=False, is_print_log=False, qt_parent=None):
     if is_print_log is True:
         print("Keys in npz file:", keys)
         print(loaded['info'].item())
+
+    if not is_plot:
+        out = {}
+        for k in loaded.files:
+            out[k] = loaded[k]
+        return out
 
     info = loaded['info'].item()
     class_name = info.get('class_name', 'PLEMeasurement')

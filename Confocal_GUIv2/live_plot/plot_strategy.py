@@ -208,7 +208,7 @@ class SmartOffsetFormatter(ticker.Formatter):
         self._offset_va = offset_va
 
         # Max length for "+C" text
-        self.C_maxlen = 10
+        self.C_maxlen = 8
 
         # Expose absolute step in data units (used by update_data_meter)
         self.abs_step = 1.0
@@ -322,7 +322,7 @@ class SmartOffsetFormatter(ticker.Formatter):
 
         # Normalize to d.dddd e ±E
         sci_exp = C_exp + (len(digits) - 1)
-        exp_str = f"e{sci_exp:+d}"  # e+3 / e-12 ...
+        exp_str = f"e{sci_exp:d}"  # e3 / e-12 ...
 
         return sign + digits[0] + '.' + digits[1:self.C_maxlen-2-len(exp_str)] + exp_str
 
