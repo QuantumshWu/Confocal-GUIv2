@@ -851,14 +851,13 @@ class Live1D(BaseLivePlotter):
         self.axes.set_xlim(self.data_x[0,0], self.data_x[-1,0]) # use index not min/max otherwise different orders under different units
         self.axes.set_ylim(self.ylim_min, self.ylim_max)
 
-        self.ylabel = self.ylabel + 'x1'
         self.axes.set_ylabel(self.ylabel)
         self.axes.set_xlabel(self.xlabel)
         
     def update_core(self):
         
         if (self.repeat_label!=self.repeat_cur):
-            self.ylabel = self.labels[1] + f' x{self.repeat_cur}'
+            self.ylabel = self.labels[1] + f' x{self.repeat_cur}' if self.repeat_cur!=1 else self.labels[-1]
             self.repeat_label = self.repeat_cur
             self.axes.set_ylabel(self.ylabel)
 
@@ -909,7 +908,6 @@ class LiveLiveDis(BaseLivePlotter):
         self.axes.set_xlim(np.nanmin(self.data_x[:,0]), np.nanmax(self.data_x[:,0]))
         self.axes.set_ylim(self.ylim_min, self.ylim_max)
 
-        self.ylabel = self.ylabel + 'x1'
         self.axes.set_ylabel(self.ylabel)
         self.axes.set_xlabel(self.xlabel)
 
@@ -1018,7 +1016,7 @@ class LiveLiveDis(BaseLivePlotter):
         lim_dis_changed = self.relim_dis()
         
         if lim_dis_changed or lim_changed or (self.repeat_label!=self.repeat_cur):
-            self.ylabel = self.labels[1] + f' x{self.repeat_cur}'
+            self.ylabel = self.labels[1] + f' x{self.repeat_cur}' if self.repeat_cur!=1 else self.labels[-1]
             self.repeat_label = self.repeat_cur
             self.axes.set_ylabel(self.ylabel)
             self.n, self.bins = np.histogram(self.data_y[:self.points_done, 0],
@@ -1175,7 +1173,6 @@ class Live2DDis(BaseLivePlotter):
         self.blit_axes.append(self.axes)
         self.blit_artists.append(self.lines[0])
 
-        self.zlabel = self.zlabel + 'x1'
         self.cbar.set_label(self.zlabel)
         self.axes.set_ylabel(self.ylabel)
         self.axes.set_xlabel(self.xlabel)
@@ -1194,7 +1191,7 @@ class Live2DDis(BaseLivePlotter):
         lim_changed = self.relim()
         if lim_changed or (self.repeat_label!=self.repeat_cur):
 
-            self.zlabel = self.labels[-1] + f' x{self.repeat_cur}'
+            self.zlabel = self.labels[-1] + f' x{self.repeat_cur}' if self.repeat_cur!=1 else self.labels[-1]
             self.repeat_label = self.repeat_cur
             self.cbar.set_label(self.zlabel)
 
